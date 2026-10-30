@@ -9,32 +9,44 @@ interface CourierDashboardProps {
 
 export default function CourierDashboard({ username }: CourierDashboardProps) {
   const [orders, setOrders] = useState<any[]>([]);
+  const [couriers, setCouriers] = useState<any[]>([]); // Список коллег
   
-  // Состояния для шторки маршрутки
+  // Состояния для шторки
   const [showMinibusModal, setShowMinibusModal] = useState(false);
   const [activeOrderForModal, setActiveOrderForModal] = useState<any | null>(null);
   
-  // Новые состояния для изменения данных обратки курьером
+  // Поля ввода для обратки
   const [returnAddress, setReturnAddress] = useState('');
   const [returnTime, setReturnTime] = useState('');
+  const [returnDate, setReturnDate] = useState(() => new Date().toISOString().split('T')[0]); // Дата по умолчанию сегодня
+  const [returnCourier, setReturnCourier] = useState(username); // Курьер по умолчанию — сам создатель
   const [returnComment, setReturnComment] = useState('');
-  const [isFormOpen, setIsFormOpen] = useState(false); // переключатель "кнопки / форма правок"
+  const [isFormOpen, setIsFormOpen] = useState(false);
 
-  const fetchOrders = async () => {
-    const { data, error } = await supabase
+  const fetchData = async () => {
+    // Загружаем заказы текущего курьера
+    const { data: oData } = await supabase
       .from('orders')
       .select('*')
       .eq('courier_id', username)
       .order('created_at', { ascending: false });
-    if (!error && data) setOrders(data);
+    if (oData) setOrders(oData);
+
+    // Загружаем список всех курьеров для переназначения обратки
+    const { data: cData } = await supabase
+      .from('app_users')
+      .select('username, full_name')
+      .eq('role', 'courier')
+      .order('id', { ascending: true });
+    if (cData) setCouriers(cData);
   };
 
   useEffect(() => {
-    fetchOrders();
+    fetchData();
     const channel = supabase
       .channel('realtime-orders')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
-        fetchOrders();
+        fetchData();
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
@@ -43,14 +55,16 @@ export default function CourierDashboard({ username }: CourierDashboardProps) {
   const handleStatusButtonClick = async (order: any) => {
     if (order.status === 'new') {
       await supabase.from('orders').update({ status: 'in_transit' }).eq('id', order.id);
-      fetchOrders();
+      fetchData();
     } else if (order.status === 'in_transit') {
       if (order.type === 'minibus_send') {
         setActiveOrderForModal(order);
         setReturnAddress(order.address || '');
         setReturnTime(order.delivery_time || '');
+        setReturnDate(new Date().toISOString().split('T')[0]);
+        setReturnCourier(username); // Сбрасываем назначение на себя
         setReturnComment('');
-        setIsFormOpen(false); // сначала показываем выбор "с обраткой / без"
+        setIsFormOpen(false);
         setShowMinibusModal(true);
       } else {
         await finishOrderDelivery(order.id);
@@ -63,13 +77,15 @@ export default function CourierDashboard({ username }: CourierDashboardProps) {
     setShowMinibusModal(false);
     setActiveOrderForModal(null);
     setIsFormOpen(false);
-    fetchOrders();
+    fetchData();
   };
 
-  // Создание обратки с учетом правок курьера
   const handleCreateReturnOrder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeOrderForModal) return;
+
+    // Собираем точную дату и время для поля создаваемого заказа
+    const targetTimestamp = `${returnDate}T12:00:00.000Z`;
 
     const { error } = await supabase.from('orders').insert([
       {
@@ -83,7 +99,8 @@ export default function CourierDashboard({ username }: CourierDashboardProps) {
         usd_rate: activeOrderForModal.usd_rate,
         comment: returnComment ? `Внесено курьером: ${returnComment}` : `Обратка к заказу №${activeOrderForModal.id}`,
         status: 'new',
-        courier_id: username
+        courier_id: returnCourier || null, // Привязываем к выбранному курьеру (или в общий пул, если пустой)
+        created_at: targetTimestamp // Устанавливаем выбранную курьером дату
       }
     ]);
 
@@ -165,7 +182,7 @@ export default function CourierDashboard({ username }: CourierDashboardProps) {
         ))
       )}
 
-      {/* ШТОРКА ЗАВЕРШЕНИЯ МАРШРУТКИ С ФОРМОЙ ПРАВОК */}
+      {/* ШТОРКА ЗАВЕРШЕНИЯ МАРШРУТКИ С КАЛЕНДАРЕМ И ВЫБОРОМ КУРЬЕРА */}
       {showMinibusModal && activeOrderForModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-end justify-center p-4 backdrop-blur-xs">
           <div className="bg-white w-full max-w-sm rounded-t-3xl p-6 space-y-4 shadow-xl text-left max-h-[90vh] overflow-y-auto">
@@ -177,7 +194,6 @@ export default function CourierDashboard({ username }: CourierDashboardProps) {
             </div>
             
             {!isFormOpen ? (
-              /* ЭТАП 1: Выбор действия */
               <div className="space-y-2">
                 <button
                   type="button"
@@ -186,7 +202,6 @@ export default function CourierDashboard({ username }: CourierDashboardProps) {
                 >
                   🔄 С обраткой (заполнить данные)
                 </button>
-                
                 <button
                   type="button"
                   onClick={() => finishOrderDelivery(activeOrderForModal.id)}
@@ -194,7 +209,6 @@ export default function CourierDashboard({ username }: CourierDashboardProps) {
                 >
                   ➡️ Без обратки (просто завершить)
                 </button>
-
                 <button
                   type="button"
                   onClick={() => { setShowMinibusModal(false); setActiveOrderForModal(null); }}
@@ -204,7 +218,6 @@ export default function CourierDashboard({ username }: CourierDashboardProps) {
                 </button>
               </div>
             ) : (
-              /* ЭТАП 2: Ввод данных курьером */
               <form onSubmit={handleCreateReturnOrder} className="space-y-3">
                 <div>
                   <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Место забора (Адрес)</label>
@@ -213,19 +226,47 @@ export default function CourierDashboard({ username }: CourierDashboardProps) {
                     value={returnAddress}
                     onChange={(e) => setReturnAddress(e.target.value)}
                     required
-                    className="w-full p-2.5 bg-gray-50 rounded-xl border-0 text-sm text-gray-800 focus:ring-2 focus:ring-indigo-500"
+                    className="w-full p-2.5 bg-gray-50 rounded-xl border-0 text-sm text-gray-800"
                   />
                 </div>
 
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Дата забора</label>
+                    <input
+                      type="date"
+                      value={returnDate}
+                      onChange={(e) => setReturnDate(e.target.value)}
+                      required
+                      className="w-full p-2.5 bg-gray-50 rounded-xl border-0 text-xs text-gray-800"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Время забора</label>
+                    <input
+                      type="text"
+                      value={returnTime}
+                      onChange={(e) => setReturnTime(e.target.value)}
+                      placeholder="До 14:00"
+                      className="w-full p-2.5 bg-gray-50 rounded-xl border-0 text-xs text-gray-800"
+                    />
+                  </div>
+                </div>
+
                 <div>
-                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Время забора</label>
-                  <input
-                    type="text"
-                    value={returnTime}
-                    onChange={(e) => setReturnTime(e.target.value)}
-                    placeholder="Например, до 19:00"
+                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Назначить курьера</label>
+                  <select
+                    value={returnCourier}
+                    onChange={(e) => setReturnCourier(e.target.value)}
                     className="w-full p-2.5 bg-gray-50 rounded-xl border-0 text-sm text-gray-800 focus:ring-2 focus:ring-indigo-500"
-                  />
+                  >
+                    <option value="">-- Общий пул (Не назначен) --</option>
+                    {couriers.map((c) => (
+                      <option key={c.username} value={c.username}>
+                        {c.username === username ? `👤 Я (${c.full_name})` : `👤 ${c.full_name}`}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div>
@@ -235,7 +276,7 @@ export default function CourierDashboard({ username }: CourierDashboardProps) {
                     onChange={(e) => setReturnComment(e.target.value)}
                     placeholder="Номер маршрутки, вокзал, особенности..."
                     rows={2}
-                    className="w-full p-2.5 bg-gray-50 rounded-xl border-0 text-sm text-gray-800 focus:ring-2 focus:ring-indigo-500"
+                    className="w-full p-2.5 bg-gray-50 rounded-xl border-0 text-sm text-gray-800"
                   />
                 </div>
 
