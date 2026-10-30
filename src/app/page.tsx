@@ -161,16 +161,20 @@ export default function Home() {
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Пароль</label>
-            <input 
-              type="password" 
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              placeholder="••••••••"
-              className="w-full p-3.5 bg-gray-50 rounded-2xl border-0 text-sm text-gray-800"
-            />
-          </div>
+  <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Пароль</label>
+  <input 
+    type="password" 
+    value={password}
+    onChange={(e) => setPassword(e.target.value)}
+    required
+    placeholder="••••••••"
+    autoComplete="current-password"
+    id="courier-password-input"
+    name="password"
+    className="w-full p-3.5 bg-gray-50 rounded-2xl border-0 text-sm text-gray-800"
+  />
+</div>
+
 
           {error && (
             <p className="text-xs font-semibold text-red-500 text-center bg-red-50 p-2.5 rounded-xl">
