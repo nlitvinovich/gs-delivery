@@ -6,10 +6,10 @@ export default function ManagerJournal() {
   const [allOrders, setAllOrders] = useState<any[]>([]);
   const [couriers, setCouriers] = useState<any[]>([]);
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0]);
-  const [selectedCourierFilter, setSelectedCourierFilter] = useState('all'); // 'all' — все, 'none' — не назначены, 'логин' — конкретный
+  const [selectedCourierFilter, setSelectedCourierFilter] = useState('all');
   const [editingOrder, setEditingOrder] = useState<any | null>(null);
   
-  // Состояния для полей редактирования
+  // Состояния полей редактирования
   const [editType, setEditType] = useState('');
   const [editCourier, setEditCourier] = useState('');
   const [editAddress, setEditAddress] = useState('');
@@ -22,28 +22,45 @@ export default function ManagerJournal() {
   const [editComment, setEditComment] = useState('');
   const [editStatus, setEditStatus] = useState('new');
 
-  const fetchData = async () => {
-    // 1. Загружаем список курьеров для фильтра и модалки
-    const { data: cData } = await supabase.from('app_users').select('username, full_name').eq('role', 'courier');
-    if (cData) setCouriers(cData);
-    
-    // 2. Строим запрос заказов на выбранную дату
+  const fetchCouriers = async () => {
+    const { data } = await supabase.from('app_users').select('username, full_name').eq('role', 'courier');
+    if (data) setCouriers(data);
+  };
+
+  const fetchAllOrders = async () => {
     const start = `${selectedDate}T00:00:00.000Z`;
     const end = `${selectedDate}T23:59:59.999Z`;
     let query = supabase.from('orders').select('*').gte('created_at', start).lte('created_at', end);
 
-    // 3. Динамически фильтруем на уровне базы данных
     if (selectedCourierFilter === 'none') {
       query = query.is('courier_id', null);
     } else if (selectedCourierFilter !== 'all') {
       query = query.eq('courier_id', selectedCourierFilter);
     }
 
-    const { data: oData } = await query.order('created_at', { ascending: false });
-    if (oData) setAllOrders(oData);
+    const { data } = await query.order('created_at', { ascending: false });
+    if (data) setAllOrders(data);
   };
 
-  useEffect(() => { fetchData(); }, [selectedDate, selectedCourierFilter]);
+  // 1. Загружаем курьеров один раз при старте
+  useEffect(() => { fetchCouriers(); }, []);
+
+  // 2. Слушаем базу данных в реальном времени при изменении даты или фильтра курьеров
+  useEffect(() => {
+    fetchAllOrders();
+
+    // Подписываемся на мгновенные изменения статусов курьерами
+    const channel = supabase
+      .channel('manager-realtime-journal')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
+        fetchAllOrders(); // При любом чихе курьера (В путь / Доставлен) — обновляем список у менеджера
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [selectedDate, selectedCourierFilter]);
 
   const startEdit = (o: any) => {
     setEditingOrder(o); setEditType(o.type); setEditCourier(o.courier_id || '');
@@ -62,7 +79,7 @@ export default function ManagerJournal() {
       comment: editComment, status: editStatus
     }).eq('id', editingOrder.id);
     setEditingOrder(null);
-    fetchData();
+    fetchAllOrders();
   };
 
   const getTypeName = (t: string) => {
@@ -79,16 +96,12 @@ export default function ManagerJournal() {
       <div className="bg-white rounded-3xl p-4 shadow-sm border border-gray-100 space-y-3">
         <div className="flex items-center justify-between">
           <span className="text-sm font-bold text-gray-700">Дата просмотра:</span>
-          <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="p-2 bg-gray-50 rounded-xl text-sm font-semibold border-0 text-gray-800 focus:ring-2 focus:ring-indigo-500" />
+          <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="p-2 bg-gray-50 rounded-xl text-sm font-semibold border-0 text-gray-800" />
         </div>
         
         <div className="flex items-center justify-between border-t pt-2">
           <span className="text-sm font-bold text-gray-700">Фильтр по курьеру:</span>
-          <select 
-            value={selectedCourierFilter} 
-            onChange={(e) => setSelectedCourierFilter(e.target.value)} 
-            className="p-2 bg-gray-50 rounded-xl text-sm font-semibold border-0 text-gray-800 focus:ring-2 focus:ring-indigo-500"
-          >
+          <select value={selectedCourierFilter} onChange={(e) => setSelectedCourierFilter(e.target.value)} className="p-2 bg-gray-50 rounded-xl text-sm font-semibold border-0 text-gray-800">
             <option value="all">👀 Все курьеры</option>
             <option value="none">🛑 Не назначены</option>
             {couriers.map((c) => (
