@@ -3,13 +3,18 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
 
-export default function CourierDashboard() {
+interface CourierDashboardProps {
+  username: string;
+}
+
+export default function CourierDashboard({ username }: CourierDashboardProps) {
   const [orders, setOrders] = useState<any[]>([]);
 
   const fetchOrders = async () => {
     const { data, error } = await supabase
       .from('orders')
       .select('*')
+      .eq('courier_id', username) // Фильтр: показываем только заказы этого курьера
       .order('created_at', { ascending: false });
     if (!error && data) setOrders(data);
   };
@@ -27,7 +32,7 @@ export default function CourierDashboard() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [username]);
 
   const updateStatus = async (id: number, currentStatus: string) => {
     let nextStatus = 'in_transit';
