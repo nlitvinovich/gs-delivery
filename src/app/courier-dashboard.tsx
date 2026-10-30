@@ -9,9 +9,16 @@ interface CourierDashboardProps {
 
 export default function CourierDashboard({ username }: CourierDashboardProps) {
   const [orders, setOrders] = useState<any[]>([]);
-  // Состояния для всплывающего окна маршрутки
+  
+  // Состояния для шторки маршрутки
   const [showMinibusModal, setShowMinibusModal] = useState(false);
   const [activeOrderForModal, setActiveOrderForModal] = useState<any | null>(null);
+  
+  // Новые состояния для изменения данных обратки курьером
+  const [returnAddress, setReturnAddress] = useState('');
+  const [returnTime, setReturnTime] = useState('');
+  const [returnComment, setReturnComment] = useState('');
+  const [isFormOpen, setIsFormOpen] = useState(false); // переключатель "кнопки / форма правок"
 
   const fetchOrders = async () => {
     const { data, error } = await supabase
@@ -33,59 +40,58 @@ export default function CourierDashboard({ username }: CourierDashboardProps) {
     return () => { supabase.removeChannel(channel); };
   }, [username]);
 
-  // Главная функция клика по кнопке статуса
   const handleStatusButtonClick = async (order: any) => {
     if (order.status === 'new') {
-      // Из "Новый" переводим в "В пути"
       await supabase.from('orders').update({ status: 'in_transit' }).eq('id', order.id);
       fetchOrders();
     } else if (order.status === 'in_transit') {
-      // Если это отправка маршруткой — прерываемся и открываем выбор обратки
       if (order.type === 'minibus_send') {
         setActiveOrderForModal(order);
+        setReturnAddress(order.address || '');
+        setReturnTime(order.delivery_time || '');
+        setReturnComment('');
+        setIsFormOpen(false); // сначала показываем выбор "с обраткой / без"
         setShowMinibusModal(true);
       } else {
-        // Для всех остальных типов заказов сразу переводим в доставлен
         await finishOrderDelivery(order.id);
       }
     }
   };
 
-  // Обычное завершение заказа (без обратки)
   const finishOrderDelivery = async (id: number) => {
     await supabase.from('orders').update({ status: 'delivered' }).eq('id', id);
     setShowMinibusModal(false);
     setActiveOrderForModal(null);
+    setIsFormOpen(false);
     fetchOrders();
   };
 
-  // Создание обратного рейса (забор маршрутки)
-  const handleCreateReturnOrder = async () => {
+  // Создание обратки с учетом правок курьера
+  const handleCreateReturnOrder = async (e: React.FormEvent) => {
+    e.preventDefault();
     if (!activeOrderForModal) return;
 
-    // 1. Создаем зеркальный заказ на забор маршрутки
     const { error } = await supabase.from('orders').insert([
       {
-        type: 'minibus_pickup', // Тип строго "Забор маршрутки"
-        address: activeOrderForModal.address,
-        delivery_time: activeOrderForModal.delivery_time,
+        type: 'minibus_pickup',
+        address: returnAddress,
+        delivery_time: returnTime,
         phone: activeOrderForModal.phone,
         items: `${activeOrderForModal.items} (Обратка)`,
         price: activeOrderForModal.price,
         currency: activeOrderForModal.currency,
         usd_rate: activeOrderForModal.usd_rate,
-        comment: `Создано автоматически как обратка к заказу №${activeOrderForModal.id}`,
+        comment: returnComment ? `Внесено курьером: ${returnComment}` : `Обратка к заказу №${activeOrderForModal.id}`,
         status: 'new',
-        courier_id: username // Сразу закрепляем за этим же курьером
+        courier_id: username
       }
     ]);
 
     if (error) {
-      alert('Ошибка при создании обратки: ' + error.message);
+      alert('Ошибка: ' + error.message);
     } else {
-      // 2. Закрываем исходный заказ
       await finishOrderDelivery(activeOrderForModal.id);
-      alert('Обратный заказ успешно создан и добавлен в ваш список!');
+      alert('Обратный заказ успешно создан!');
     }
   };
 
@@ -147,7 +153,7 @@ export default function CourierDashboard({ username }: CourierDashboardProps) {
                 disabled={order.status === 'delivered'}
                 className={`px-4 py-2.5 rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer ${
                   order.status === 'new' ? 'bg-blue-600 text-white' : 
-                  order.status === 'in_transit' ? 'bg-amber-500 text-white' : 
+                  order.status === 'in_transit' ? 'bg-amber-50 text-white' : 
                   'bg-gray-100 text-gray-400 border cursor-not-allowed'
                 }`}
               >
@@ -159,40 +165,97 @@ export default function CourierDashboard({ username }: CourierDashboardProps) {
         ))
       )}
 
-      {/* ШТОРКА ВЫБОРА ОБРАТКИ ДЛЯ МАРШРУТКИ */}
+      {/* ШТОРКА ЗАВЕРШЕНИЯ МАРШРУТКИ С ФОРМОЙ ПРАВОК */}
       {showMinibusModal && activeOrderForModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-end justify-center p-4 backdrop-blur-xs">
-          <div className="bg-white w-full max-w-sm rounded-t-3xl p-6 space-y-4 shadow-xl text-center">
-            <div>
+          <div className="bg-white w-full max-w-sm rounded-t-3xl p-6 space-y-4 shadow-xl text-left max-h-[90vh] overflow-y-auto">
+            <div className="text-center">
               <h3 className="text-lg font-bold text-gray-800">Завершение маршрутки</h3>
-              <p className="text-xs text-gray-400 mt-1">Требуется ли оформить обратный забор?</p>
+              <p className="text-xs text-gray-400 mt-1">
+                {!isFormOpen ? 'Требуется ли оформить обратный забор?' : 'Укажите данные для обратного забора'}
+              </p>
             </div>
             
-            <div className="space-y-2">
-              <button
-                type="button"
-                onClick={handleCreateReturnOrder}
-                className="w-full bg-indigo-600 text-white py-3.5 px-4 rounded-xl font-bold text-sm shadow-md active:scale-95 transition-all cursor-pointer"
-              >
-                🔄 С обраткой (создать забор)
-              </button>
-              
-              <button
-                type="button"
-                onClick={() => finishOrderDelivery(activeOrderForModal.id)}
-                className="w-full bg-gray-100 text-gray-700 py-3.5 px-4 rounded-xl font-bold text-sm active:scale-95 transition-all cursor-pointer"
-              >
-                ➡️ Без обратки (просто завершить)
-              </button>
+            {!isFormOpen ? (
+              /* ЭТАП 1: Выбор действия */
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() => setIsFormOpen(true)}
+                  className="w-full bg-indigo-600 text-white py-3.5 px-4 rounded-xl font-bold text-sm shadow-md active:scale-95 transition-all cursor-pointer"
+                >
+                  🔄 С обраткой (заполнить данные)
+                </button>
+                
+                <button
+                  type="button"
+                  onClick={() => finishOrderDelivery(activeOrderForModal.id)}
+                  className="w-full bg-gray-100 text-gray-700 py-3.5 px-4 rounded-xl font-bold text-sm active:scale-95 transition-all cursor-pointer"
+                >
+                  ➡️ Без обратки (просто завершить)
+                </button>
 
-              <button
-                type="button"
-                onClick={() => { setShowMinibusModal(false); setActiveOrderForModal(null); }}
-                className="w-full text-xs text-gray-400 py-2 active:scale-95 transition-all cursor-pointer"
-              >
-                Отмена
-              </button>
-            </div>
+                <button
+                  type="button"
+                  onClick={() => { setShowMinibusModal(false); setActiveOrderForModal(null); }}
+                  className="w-full text-xs text-gray-400 py-2 text-center cursor-pointer"
+                >
+                  Отмена
+                </button>
+              </div>
+            ) : (
+              /* ЭТАП 2: Ввод данных курьером */
+              <form onSubmit={handleCreateReturnOrder} className="space-y-3">
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Место забора (Адрес)</label>
+                  <input
+                    type="text"
+                    value={returnAddress}
+                    onChange={(e) => setReturnAddress(e.target.value)}
+                    required
+                    className="w-full p-2.5 bg-gray-50 rounded-xl border-0 text-sm text-gray-800 focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Время забора</label>
+                  <input
+                    type="text"
+                    value={returnTime}
+                    onChange={(e) => setReturnTime(e.target.value)}
+                    placeholder="Например, до 19:00"
+                    className="w-full p-2.5 bg-gray-50 rounded-xl border-0 text-sm text-gray-800 focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Комментарий курьера</label>
+                  <textarea
+                    value={returnComment}
+                    onChange={(e) => setReturnComment(e.target.value)}
+                    placeholder="Номер маршрутки, вокзал, особенности..."
+                    rows={2}
+                    className="w-full p-2.5 bg-gray-50 rounded-xl border-0 text-sm text-gray-800 focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div className="pt-2 space-y-2">
+                  <button
+                    type="submit"
+                    className="w-full bg-indigo-600 text-white py-3 px-4 rounded-xl font-bold text-sm shadow-md active:scale-95 transition-all cursor-pointer"
+                  >
+                    💾 Подтвердить и создать обратку
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsFormOpen(false)}
+                    className="w-full text-xs text-gray-500 py-2 text-center cursor-pointer"
+                  >
+                    Назад к выбору
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}
