@@ -39,7 +39,7 @@ export default function Home() {
     setLoading(false);
 
     if (dbError || !data) {
-      setError('Неверное имя пользователя или пароль');
+      setError('Неверные данные для входа');
       return;
     }
 
@@ -66,7 +66,7 @@ export default function Home() {
     setError('');
     
     if (!window.PublicKeyCredential) {
-      alert('Биометрия не поддерживается этим браузером. Откройте приложение в оригинальном Safari на iPhone.');
+      alert('Биометрия не поддерживается этим браузером. Откройте оригинальный Safari.');
       return;
     }
 
@@ -98,11 +98,11 @@ export default function Home() {
       if (savedCredentials) {
         setUser(JSON.parse(savedCredentials));
       } else {
-        setError('Сначала войдите по паролю, чтобы привязать Face ID');
+        setError('Сначала войдите обычным способом');
       }
     } catch (err: any) {
       console.error(err);
-      setError('Биометрия отклонена устройством');
+      setError('Биометрия отклонена');
     }
   };
 
@@ -147,33 +147,36 @@ export default function Home() {
         <h1 className="text-2xl font-black text-slate-800 tracking-tight text-center mb-1">GS Delivery</h1>
         <p className="text-xs text-slate-400 text-center mb-6">Вход в систему управления доставкой</p>
         
-        <form onSubmit={handleLogin} className="space-y-4">
+        {/* Убрали тег form, чтобы iOS не считывала это как форму регистрации аккаунта */}
+        <div className="space-y-4">
           <div>
-            <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Логин</label>
+            <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Пользователь</label>
             <input 
               type="text" 
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               required
               autoComplete="off"
-              id="login-field-fixed"
-              placeholder="имя пользователя"
-              className="w-full p-3.5 bg-gray-50 rounded-2xl border-0 text-sm text-gray-800"
+              id="field-user-id"
+              name="field-user-id"
+              placeholder="Имя"
+              className="w-full p-3.5 bg-gray-50 rounded-2xl border-0 text-sm text-gray-800 focus:outline-none focus:ring-0"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Пароль</label>
+            <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Ключ доступа</label>
             <input 
               type="text" 
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              autoComplete="new-password"
-              id="pass-field-fixed"
-              placeholder="••••••••"
+              autoComplete="off"
+              id="field-key-id"
+              name="field-key-id"
+              placeholder="Код"
               style={{ WebkitTextSecurity: 'disc' } as React.CSSProperties}
-              className="w-full p-3.5 bg-gray-50 rounded-2xl border-0 text-sm text-gray-800"
+              className="w-full p-3.5 bg-gray-50 rounded-2xl border-0 text-sm text-gray-800 focus:outline-none focus:ring-0"
             />
           </div>
 
@@ -184,11 +187,12 @@ export default function Home() {
           )}
 
           <button
-            type="submit"
+            type="button"
+            onClick={(e) => handleLogin(e as any)}
             disabled={loading}
             className="w-full bg-indigo-600 text-white py-4 px-6 rounded-2xl font-bold text-base shadow-lg shadow-indigo-600/20 active:scale-[0.98] transition-all cursor-pointer"
           >
-            {loading ? 'Проверка...' : 'Войти по паролю'}
+            {loading ? 'Проверка...' : 'Войти в систему'}
           </button>
 
           {hasBiometrics && (
@@ -200,7 +204,7 @@ export default function Home() {
               Вход по Face ID 📱
             </button>
           )}
-        </form>
+        </div>
       </div>
     </div>
   );
