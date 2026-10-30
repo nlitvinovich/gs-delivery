@@ -31,7 +31,6 @@ export default function ManagerCouriers({ couriers, onRefresh }: { couriers: any
   };
 
   const startEdit = (c: any) => {
-    setEditingOrder(null); // Сброс, если были открыты заказы
     setEditingCourier(c);
     setEditFullName(c.full_name);
     setEditUsername(c.username);
