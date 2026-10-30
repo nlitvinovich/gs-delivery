@@ -42,25 +42,27 @@ export default function ManagerJournal() {
     if (data) setAllOrders(data);
   };
 
-  // 1. Загружаем курьеров один раз при старте
   useEffect(() => { fetchCouriers(); }, []);
 
-  // 2. Слушаем базу данных в реальном времени при изменении даты или фильтра курьеров
   useEffect(() => {
     fetchAllOrders();
-
-    // Подписываемся на мгновенные изменения статусов курьерами
     const channel = supabase
       .channel('manager-realtime-journal')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
-        fetchAllOrders(); // При любом чихе курьера (В путь / Доставлен) — обновляем список у менеджера
+        fetchAllOrders();
       })
       .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => { supabase.removeChannel(channel); };
   }, [selectedDate, selectedCourierFilter]);
+
+  // Функция ПОЛНОГО УДАЛЕНИЯ заказа с подтверждением
+  const handleDeleteOrder = async (id: number) => {
+    if (window.confirm(`Вы уверены, что хотите ПОЛНОСТЬЮ УДАЛИТЬ заказ №${id}? Это действие необратимо.`)) {
+      const { error } = await supabase.from('orders').delete().eq('id', id);
+      if (error) alert('Ошибка удаления: ' + error.message);
+      else fetchAllOrders();
+    }
+  };
 
   const startEdit = (o: any) => {
     setEditingOrder(o); setEditType(o.type); setEditCourier(o.courier_id || '');
@@ -121,10 +123,17 @@ export default function ManagerJournal() {
               <div className="flex justify-between items-center text-xs">
                 <span className="font-bold px-2 py-0.5 bg-slate-100 text-slate-700 rounded-full">{getTypeName(o.type)}</span>
                 <div className="flex items-center gap-2">
-                  <span className={`px-2 py-0.5 rounded font-bold ${o.status === 'new' ? 'bg-blue-50 text-blue-600' : o.status === 'in_transit' ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'}`}>
-                    {o.status === 'new' ? 'Новый' : o.status === 'in_transit' ? 'В пути' : 'Доставлен'}
+                  <span className={`px-2 py-0.5 rounded font-bold ${
+                    o.status === 'new' ? 'bg-blue-50 text-blue-600' : 
+                    o.status === 'in_transit' ? 'bg-amber-50 text-amber-600' : 
+                    o.status === 'delivered' ? 'bg-emerald-50 text-emerald-600' :
+                    'bg-red-50 text-red-600'
+                  }`}>
+                    {o.status === 'new' ? 'Новый' : o.status === 'in_transit' ? 'В пути' : o.status === 'delivered' ? 'Доставлен' : 'Отказ'}
                   </span>
                   <button type="button" onClick={() => startEdit(o)} className="text-indigo-600 font-bold bg-indigo-50 px-2 py-0.5 rounded cursor-pointer">Правка ✏️</button>
+                  {/* Красная кнопка полного удаления заказа */}
+                  <button type="button" onClick={() => handleDeleteOrder(o.id)} className="text-red-500 font-bold bg-red-50 px-2 py-0.5 rounded cursor-pointer">🗑️</button>
                 </div>
               </div>
               <p className="text-sm font-bold text-gray-800">{o.address}</p>
@@ -152,7 +161,10 @@ export default function ManagerJournal() {
               <div>
                 <label className="block text-xs font-bold text-gray-500 mb-1">Статус</label>
                 <select value={editStatus} onChange={(e) => setEditStatus(e.target.value)} className="w-full p-2.5 bg-gray-50 rounded-xl text-sm border-0 text-gray-800">
-                  <option value="new">Новый</option><option value="in_transit">В пути</option><option value="delivered">Доставлен</option>
+                  <option value="new">Новый</option>
+                  <option value="in_transit">В пути</option>
+                  <option value="delivered">Доставлен</option>
+                  <option value="canceled">Отказ 🛑</option>
                 </select>
               </div>
               <div>
@@ -182,7 +194,7 @@ export default function ManagerJournal() {
                 <select value={editCurrency} onChange={(e) => setEditCurrency(e.target.value)} className="w-full p-2.5 bg-gray-50 rounded-xl text-sm border-0 text-gray-800">
                   <option value="BYN">BYN</option><option value="USD">USD</option><option value="RUB">RUB</option>
                 </select>
-                <input type="number" step="0.0001" value={editUsdRate} onChange={(e) => setEditUsdRate(e.target.value)} placeholder="Курс" className="w-full p-2.5 bg-gray-50 rounded-xl text-sm border-0 text-gray-800" />
+                <input type="number" step="0.0001" value={editUsdRate} onChange={(e) => setEditUsdRate(e.target.value)} placeholder="Курс" className="w-gray p-2.5 bg-gray-50 rounded-xl text-sm border-0 text-gray-800" />
               </div>
               <input type="text" value={editComment} onChange={(e) => setEditComment(e.target.value)} placeholder="Комментарий" className="w-full p-2.5 bg-gray-50 rounded-xl text-sm border-0 text-gray-800" />
               <button type="submit" className="w-full bg-indigo-600 text-white p-3.5 rounded-xl font-bold active:scale-95 transition-all cursor-pointer">Сохранить</button>
