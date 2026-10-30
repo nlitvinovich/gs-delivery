@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
 
 export default function ManagerDashboard() {
@@ -13,7 +13,21 @@ export default function ManagerDashboard() {
   const [currency, setCurrency] = useState('BYN');
   const [usdRate, setUsdRate] = useState('3.30');
   const [comment, setComment] = useState('');
+  const [couriers, setCouriers] = useState<any[]>([]);
+  const [selectedCourier, setSelectedCourier] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Загружаем список курьеров из базы для выпадающего списка
+  useEffect(() => {
+    const fetchCouriers = async () => {
+      const { data } = await supabase
+        .from('app_users')
+        .select('username, full_name')
+        .eq('role', 'courier');
+      if (data) setCouriers(data);
+    };
+    fetchCouriers();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,7 +44,8 @@ export default function ManagerDashboard() {
         currency,
         usd_rate: parseFloat(usdRate),
         comment,
-        status: 'new'
+        status: 'new',
+        courier_id: selectedCourier || null // Привязываем заказ к выбранному курьеру
       }
     ]);
 
@@ -38,8 +53,8 @@ export default function ManagerDashboard() {
     if (error) {
       alert('Ошибка добавления: ' + error.message);
     } else {
-      alert('Заказ успешно создан!');
-      setAddress(''); setTime(''); setPhone(''); setItems(''); setPrice(''); setComment('');
+      alert('Заказ успешно создан и назначен курьеру!');
+      setAddress(''); setTime(''); setPhone(''); setItems(''); setPrice(''); setComment(''); setSelectedCourier('');
     }
   };
 
@@ -56,6 +71,15 @@ export default function ManagerDashboard() {
             <option value="pickup">Самовывоз</option>
             <option value="minibus_pickup">Забор маршрутки</option>
             <option value="errand">Поручение</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Назначить курьера</label>
+          <select value={selectedCourier} onChange={(e) => setSelectedCourier(e.target.value)} className="w-full p-3 bg-gray-50 rounded-xl border-0 text-sm text-gray-800 focus:ring-2 focus:ring-indigo-500">
+            <option value="">-- Не назначен (Общий пул) --</option>
+            {couriers.map((c) => (
+              <option key={c.username} value={c.username}>{c.full_name}</option>
+            ))}
           </select>
         </div>
         <div>
