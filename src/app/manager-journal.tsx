@@ -6,6 +6,7 @@ export default function ManagerJournal() {
   const [allOrders, setAllOrders] = useState<any[]>([]);
   const [couriers, setCouriers] = useState<any[]>([]);
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [selectedCourierFilter, setSelectedCourierFilter] = useState('all'); // 'all' — все, 'none' — не назначены, 'логин' — конкретный
   const [editingOrder, setEditingOrder] = useState<any | null>(null);
   
   // Состояния для полей редактирования
@@ -22,16 +23,27 @@ export default function ManagerJournal() {
   const [editStatus, setEditStatus] = useState('new');
 
   const fetchData = async () => {
+    // 1. Загружаем список курьеров для фильтра и модалки
     const { data: cData } = await supabase.from('app_users').select('username, full_name').eq('role', 'courier');
     if (cData) setCouriers(cData);
     
+    // 2. Строим запрос заказов на выбранную дату
     const start = `${selectedDate}T00:00:00.000Z`;
     const end = `${selectedDate}T23:59:59.999Z`;
-    const { data: oData } = await supabase.from('orders').select('*').gte('created_at', start).lte('created_at', end).order('created_at', { ascending: false });
+    let query = supabase.from('orders').select('*').gte('created_at', start).lte('created_at', end);
+
+    // 3. Динамически фильтруем на уровне базы данных
+    if (selectedCourierFilter === 'none') {
+      query = query.is('courier_id', null);
+    } else if (selectedCourierFilter !== 'all') {
+      query = query.eq('courier_id', selectedCourierFilter);
+    }
+
+    const { data: oData } = await query.order('created_at', { ascending: false });
     if (oData) setAllOrders(oData);
   };
 
-  useEffect(() => { fetchData(); }, [selectedDate]);
+  useEffect(() => { fetchData(); }, [selectedDate, selectedCourierFilter]);
 
   const startEdit = (o: any) => {
     setEditingOrder(o); setEditType(o.type); setEditCourier(o.courier_id || '');
@@ -63,14 +75,33 @@ export default function ManagerJournal() {
   };
   return (
     <div className="space-y-4">
-      <div className="bg-white rounded-3xl p-4 shadow-sm border border-gray-100 flex items-center justify-between">
-        <span className="text-sm font-bold text-gray-700">Дата просмотра:</span>
-        <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="p-2 bg-gray-50 rounded-xl text-sm font-semibold border-0 text-gray-800" />
+      {/* Календарь и Фильтр по курьерам */}
+      <div className="bg-white rounded-3xl p-4 shadow-sm border border-gray-100 space-y-3">
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-bold text-gray-700">Дата просмотра:</span>
+          <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="p-2 bg-gray-50 rounded-xl text-sm font-semibold border-0 text-gray-800 focus:ring-2 focus:ring-indigo-500" />
+        </div>
+        
+        <div className="flex items-center justify-between border-t pt-2">
+          <span className="text-sm font-bold text-gray-700">Фильтр по курьеру:</span>
+          <select 
+            value={selectedCourierFilter} 
+            onChange={(e) => setSelectedCourierFilter(e.target.value)} 
+            className="p-2 bg-gray-50 rounded-xl text-sm font-semibold border-0 text-gray-800 focus:ring-2 focus:ring-indigo-500"
+          >
+            <option value="all">👀 Все курьеры</option>
+            <option value="none">🛑 Не назначены</option>
+            {couriers.map((c) => (
+              <option key={c.username} value={c.username}>👤 {c.full_name}</option>
+            ))}
+          </select>
+        </div>
       </div>
 
+      {/* Список отфильтрованных заказов */}
       <div className="space-y-3">
         {allOrders.length === 0 ? (
-          <p className="text-gray-400 text-center py-8 bg-white rounded-3xl border border-dashed">Заказов нет</p>
+          <p className="text-gray-400 text-center py-8 bg-white rounded-3xl border border-dashed">Заказов не найдено</p>
         ) : (
           allOrders.map((o) => (
             <div key={o.id} className="bg-white rounded-3xl p-4 shadow-sm border border-gray-100 space-y-2">
@@ -85,8 +116,9 @@ export default function ManagerJournal() {
               </div>
               <p className="text-sm font-bold text-gray-800">{o.address}</p>
               <p className="text-xs text-gray-500">🛍️ {o.items}</p>
+              {o.comment && <p className="text-xs text-amber-700 font-mono bg-amber-50/50 p-2 rounded-lg">💡 {o.comment}</p>}
               <div className="flex justify-between items-center text-xs pt-2 border-t border-gray-50">
-                <span className="text-gray-400">Курьер: <strong className="text-gray-700">{o.courier_id || 'Не назначен'}</strong></span>
+                <span className="text-gray-400">Курьер: <strong className="text-gray-700">{couriers.find(c => c.username === o.courier_id)?.full_name || o.courier_id || 'Не назначен'}</strong></span>
                 <span className="font-black text-gray-800 text-sm">{o.price} {o.currency}</span>
               </div>
             </div>
@@ -94,6 +126,7 @@ export default function ManagerJournal() {
         )}
       </div>
 
+      {/* ВСПЛЫВАЮЩЕЕ ОКНО РЕДАКТИРОВАНИЯ */}
       {editingOrder && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4 backdrop-blur-xs">
           <div className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 max-h-[90vh] overflow-y-auto space-y-4 shadow-xl">
