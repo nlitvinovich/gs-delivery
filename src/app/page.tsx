@@ -18,7 +18,6 @@ export default function Home() {
     if (savedUser) {
       setUser(JSON.parse(savedUser));
     }
-    // Проверяем, включен ли Face ID для какого-то аккаунта на этом iPhone
     const bioEnabled = localStorage.getItem('gs_bio_enabled');
     if (bioEnabled === 'true') {
       setHasBiometrics(true);
@@ -52,7 +51,6 @@ export default function Home() {
 
     localStorage.setItem('gs_user', JSON.stringify(loggedUser));
     
-    // Предлагаем активировать Face ID, если он еще не включен
     if (localStorage.getItem('gs_bio_enabled') !== 'true') {
       if (window.confirm('Включить вход по Face ID / Touch ID на этом устройстве?')) {
         localStorage.setItem('gs_bio_enabled', 'true');
@@ -67,18 +65,35 @@ export default function Home() {
   const handleFaceID = async () => {
     setError('');
     
-    // Вызываем проверку доступности локальной биометрии Apple / Android устройств
     if (!window.PublicKeyCredential) {
-      alert('Биометрия не поддерживается этим браузером. Откройте приложение в Safari.');
+      alert('Биометрия не поддерживается этим браузером. Откройте приложение в оригинальном Safari на iPhone.');
       return;
     }
 
     try {
-      // Имитируем запрос к системной биометрии WebAuthn для активации шторки Face ID на iOS
       const challenge = new Uint8Array(32);
       window.crypto.getRandomValues(challenge);
-      
-      // Локальный триггер Face ID
+
+      const credentialOptions: CredentialCreationOptions = {
+        publicKey: {
+          challenge: challenge,
+          rp: { name: "GS Delivery" },
+          user: {
+            id: new Uint8Array([1, 2, 3, 4]), 
+            name: "courier",
+            displayName: "Courier"
+          },
+          pubKeyCredParams: [{ type: "public-key", alg: -7 }], 
+          authenticatorSelection: {
+            authenticatorAttachment: "platform", 
+            userVerification: "required" 
+          },
+          timeout: 60000
+        }
+      };
+
+      await navigator.credentials.create(credentialOptions);
+
       const savedCredentials = localStorage.getItem('gs_bio_credentials');
       if (savedCredentials) {
         setUser(JSON.parse(savedCredentials));
@@ -86,7 +101,8 @@ export default function Home() {
         setError('Сначала войдите по паролю, чтобы привязать Face ID');
       }
     } catch (err: any) {
-      setError('Ошибка Face ID: ' + err.message);
+      console.error(err);
+      setError('Биометрия отклонена устройством');
     }
   };
 
