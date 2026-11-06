@@ -16,16 +16,21 @@ export default function CourierDashboard({ username }: CourierDashboardProps) {
   
   const [returnAddress, setReturnAddress] = useState('');
   const [returnTime, setReturnTime] = useState('');
-  const [returnDate, setReturnDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [returnDate, setReturnDate] = useState(() => new Date().toISOString().split('T'));
   const [returnCourier, setReturnCourier] = useState(username);
   const [returnComment, setReturnComment] = useState('');
   const [isFormOpen, setIsFormOpen] = useState(false);
 
+  // Очищаем username от пробелов и приводим к нижнему регистру
+  const cleanUsername = username.trim().toLowerCase();
+
   const fetchData = async () => {
+    if (!cleanUsername) return;
+
     const { data: oData } = await supabase
       .from('orders')
       .select('*')
-      .eq('courier_id', username)
+      .eq('courier_id', cleanUsername)
       .order('created_at', { ascending: false });
     if (oData) setOrders(oData);
 
@@ -37,19 +42,19 @@ export default function CourierDashboard({ username }: CourierDashboardProps) {
     if (cData) setCouriers(cData);
   };
 
-    useEffect(() => {
+  useEffect(() => {
+    // Вызываем первую загрузку
     fetchData();
 
-    // Настраиваем живое прослушивание всей таблицы заказов
+    // Создаем глобальный слушатель всей таблицы без лишних фильтров
     const channel = supabase
-      .channel('courier-live-updates')
+      .channel('public:orders')
       .on(
-        'postgres_changes', 
-        { event: '*', schema: 'public', table: 'orders' }, 
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'orders' },
         () => {
-          // Как только менеджер добавил, изменил или удалил любой заказ —
-          // курьерский экран на iPhone мгновенно перезапросит актуальные данные!
-          fetchData(); 
+          // Как только в базе появилось любое изменение — мгновенно обновляем экран курьера
+          fetchData();
         }
       )
       .subscribe();
@@ -57,7 +62,7 @@ export default function CourierDashboard({ username }: CourierDashboardProps) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [username]);
+  }, [cleanUsername]);
 
   const handleStatusButtonClick = async (order: any) => {
     if (order.status === 'new') {
@@ -68,8 +73,8 @@ export default function CourierDashboard({ username }: CourierDashboardProps) {
         setActiveOrderForModal(order);
         setReturnAddress(order.address || '');
         setReturnTime(order.delivery_time || '');
-        setReturnDate(new Date().toISOString().split('T')[0]);
-        setReturnCourier(username);
+        setReturnDate(new Date().toISOString().split('T'));
+        setReturnCourier(cleanUsername);
         setReturnComment('');
         setIsFormOpen(false);
         setShowMinibusModal(true);
@@ -173,7 +178,6 @@ export default function CourierDashboard({ username }: CourierDashboardProps) {
 
               <div className="flex justify-between items-center pt-2">
                 <div>
-                  {/* Выводим только поле price, в котором уже хранится склеенная мультивалютная строка */}
                   <p className="text-base font-black text-gray-900 break-all">{order.price}</p>
                 </div>
 
@@ -205,7 +209,7 @@ export default function CourierDashboard({ username }: CourierDashboardProps) {
               <div className="space-y-0.5 max-w-[65%]">
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] font-bold text-gray-500 bg-gray-200/60 px-1.5 py-0.5 rounded">
-                    {getTypeName(order.type).split(' ')[0]}
+                    {getTypeName(order.type).split(' ')}
                   </span>
                   <p className="text-xs font-bold text-gray-700 truncate">{order.address}</p>
                 </div>
@@ -218,7 +222,6 @@ export default function CourierDashboard({ username }: CourierDashboardProps) {
                 }`}>
                   {order.status === 'delivered' ? 'Выполнено ✓' : 'ОТКАЗ 🛑'}
                 </span>
-                {/* В архиве тоже убираем currency и оставляем только чистую строку price */}
                 <p className="text-xs font-black text-gray-600 mt-0.5 break-all">{order.price}</p>
               </div>
             </div>
@@ -260,7 +263,7 @@ export default function CourierDashboard({ username }: CourierDashboardProps) {
                   <option value="">-- Общий пул --</option>
                   {couriers.map((c) => (
                     <option key={c.username} value={c.username}>
-                      {c.username === username ? `👤 Я (${c.full_name})` : `👤 ${c.full_name}`}
+                      {c.username === cleanUsername ? `👤 Я (${c.full_name})` : `👤 ${c.full_name}`}
                     </option>
                   ))}
                 </select>
