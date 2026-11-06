@@ -1,6 +1,16 @@
 'use client';
 
 export default function CourierCard({ order, getTypeName, onStatusChange }: { order: any; getTypeName: (t: string) => string; onStatusChange: (order: any, s: string) => void }) {
+  // Форматируем дату из базы в красивый вид ДД.ММ
+  const formatDate = (dateStr: string) => {
+    if (!dateStr) return '';
+    try {
+      const parts = dateStr.split('-');
+      if (parts.length === 3) return `${parts[2]}.${parts[1]}`;
+    } catch (e) {}
+    return dateStr;
+  };
+
   return (
     <div className="bg-white rounded-xl p-2.5 shadow-xs border border-gray-100 space-y-1 text-slate-900">
       <div className="flex justify-between items-center text-[11px] gap-1.5 overflow-x-auto whitespace-nowrap">
@@ -9,7 +19,11 @@ export default function CourierCard({ order, getTypeName, onStatusChange }: { or
           <span className="font-bold px-1.5 py-0.5 bg-slate-50 text-gray-600 rounded-md">{getTypeName(order.type)}</span>
         </div>
         <a href={`tel:${order.phone}`} className="text-indigo-600 font-bold underline shrink-0">{order.phone}</a>
-        <span className="font-semibold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded-md shrink-0">{order.delivery_time || 'Пул'}</span>
+        
+        {/* Добавлена дата выполнения заказа и время доставки в одну плашку */}
+        <span className="font-semibold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded-md shrink-0">
+          📅 {formatDate(order.order_date)} {order.delivery_time || 'Пул'}
+        </span>
       </div>
       <div className="flex items-start justify-between gap-2 pt-0.5">
         <p className="text-xs font-bold text-gray-800 flex-1 leading-tight">{order.address}</p>
