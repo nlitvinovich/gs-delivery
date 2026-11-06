@@ -35,57 +35,80 @@ export default function ManagerJournal() {
 
   const getTypeName = (t: string) => {
     const names: Record<string, string> = { 
-      city_delivery: '🏙️ Город', minibus_send: '🚌 Маршрутка', 
-      courier_service: '📦 Служба', pickup: '🏪 Самовывоз', 
-      minibus_pickup: '📥 Забор', errand: '🏃 Поручение' 
+      city_delivery: '🏙️ Город', minibus_send: '🚌 Маршр.', 
+      courier_service: '📦 Служба', pickup: '🏪 Самовыв.', 
+      minibus_pickup: '📥 Забор', errand: '🏃 Поруч.' 
     };
     return names[t] || t;
   };
-
   return (
-    <div className="space-y-4">
-      <div className="bg-white rounded-3xl p-4 shadow-sm border border-slate-100 space-y-3 text-sm text-slate-800">
+    <div className="space-y-3">
+      {/* Панель фильтров */}
+      <div className="bg-white rounded-2xl p-3 shadow-xs border border-slate-100 space-y-2 text-xs text-slate-800">
         <div className="flex justify-between items-center">
           <span className="font-bold text-slate-700">Дата просмотра:</span>
-          <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="p-2 bg-slate-50 rounded-xl border-0 font-bold text-slate-900" />
+          <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="p-1.5 bg-slate-50 rounded-lg border-0 font-bold text-slate-900" />
         </div>
         <div className="flex justify-between items-center border-t border-slate-50 pt-2">
           <span className="font-bold text-slate-700">Фильтр курьера:</span>
-          <select value={selectedCourierFilter} onChange={(e) => setSelectedCourierFilter(e.target.value)} className="p-2 bg-slate-50 rounded-xl border-0 font-bold text-slate-900">
-            <option value="all">👀 Все</option><option value="none">🛑 Не назначены</option>
+          <select value={selectedCourierFilter} onChange={(e) => setSelectedCourierFilter(e.target.value)} className="p-1.5 bg-slate-50 rounded-lg border-0 font-bold text-slate-900">
+            <option value="all">👀 Все</option>
+            <option value="none">🛑 Не назначены</option>
             {couriers.map((c) => <option key={c.username} value={c.username}>👤 {c.full_name}</option>)}
           </select>
         </div>
       </div>
 
-      <div className="space-y-3">
+      {/* Список компактных карточек */}
+      <div className="space-y-2">
         {allOrders.length === 0 ? (
-          <p className="text-slate-400 text-center py-8 bg-white rounded-3xl border border-dashed border-slate-200 text-sm">Заказов нет</p>
+          <p className="text-slate-400 text-center py-6 bg-white rounded-2xl border border-dashed border-slate-200 text-xs">Заказов нет</p>
         ) : (
           allOrders.map((o) => (
-            <div key={o.id} className="bg-white rounded-3xl p-4 shadow-sm border border-slate-100 space-y-2 text-sm text-slate-900">
-              <div className="flex justify-between items-center text-xs">
-                <span className="font-black px-2.5 py-1 bg-slate-100 text-slate-700 rounded-full">{getTypeName(o.type)}</span>
-                <div className="flex items-center gap-1.5">
-                  <span className={`px-2 py-0.5 rounded font-black ${o.status === 'canceled' ? 'bg-red-50 text-red-600' : o.status === 'delivered' ? 'bg-emerald-50 text-emerald-600' : o.status === 'in_transit' ? 'bg-amber-50 text-amber-600' : 'bg-blue-50 text-blue-600'}`}>
-                    {o.status === 'new' ? 'Новый' : o.status === 'in_transit' ? 'В пути' : o.status === 'delivered' ? 'Доставлен' : 'Отказ 🛑'}
-                  </span>
-                  <button type="button" onClick={() => setEditingOrder(o)} className="text-indigo-600 font-black bg-indigo-50 px-2.5 py-1 rounded-xl cursor-pointer">Правка ✏️</button>
-                  <button type="button" onClick={() => handleDeleteOrder(o.id)} className="text-red-500 font-black bg-red-50 px-2.5 py-1 rounded-xl cursor-pointer">🗑️</button>
+            <div key={o.id} className="bg-white rounded-xl p-2.5 shadow-xs border border-gray-100 space-y-1 text-xs text-slate-900">
+              
+              {/* Компактная верхняя плашка в один ряд (как у курьера) */}
+              <div className="flex justify-between items-center text-[11px] gap-1.5 overflow-x-auto whitespace-nowrap">
+                <div className="flex items-center gap-1 shrink-0">
+                  <span className="font-black text-indigo-600">№{o.id}</span>
+                  <span className="font-bold px-1.5 py-0.5 bg-slate-50 text-gray-600 rounded-md">{getTypeName(o.type)}</span>
+                </div>
+                <a href={`tel:${o.phone}`} className="text-indigo-600 font-bold underline shrink-0">{o.phone}</a>
+                <span className={`px-1.5 py-0.5 rounded-md font-black shrink-0 ${o.status === 'canceled' ? 'bg-red-50 text-red-600' : o.status === 'delivered' ? 'bg-emerald-50 text-emerald-600' : o.status === 'in_transit' ? 'bg-amber-50 text-amber-600' : 'bg-blue-50 text-blue-600'}`}>
+                  {o.status === 'new' ? 'Новый' : o.status === 'in_transit' ? 'В пути' : o.status === 'delivered' ? 'Вып.' : 'Отк. 🛑'}
+                </span>
+              </div>
+
+              {/* Адрес и кнопка карты */}
+              <div className="flex items-start justify-between gap-2 pt-0.5">
+                <p className="font-bold text-gray-800 flex-1 leading-tight">{o.address}</p>
+              </div>
+
+              {/* Наименование товаров */}
+              <div className="text-[11px] bg-slate-50/60 p-1.5 rounded-lg text-gray-700 leading-tight">
+                <span className="font-medium text-gray-400">Товары:</span> {o.items}
+                {o.comment && <p className="text-[10px] text-amber-700 mt-0.5 font-mono">💡 {o.comment}</p>}
+              </div>
+
+              {/* Нижняя строчка с ценой, курьером и мелкими кнопками */}
+              <div className="flex justify-between items-center pt-1 gap-2 border-t border-gray-50 text-[11px]">
+                <div className="flex-1 min-w-0">
+                  <p className="text-gray-400 truncate">Курьер: <strong className="text-gray-700 font-bold">{couriers.find(c => c.username === o.courier_id)?.full_name || 'Пул'}</strong></p>
+                  <p className="font-black text-gray-900 break-all">{o.price}</p>
+                </div>
+                
+                <div className="flex gap-1 shrink-0">
+                  <button type="button" onClick={() => setEditingOrder(o)} className="text-indigo-600 font-bold bg-indigo-50 px-2 py-1 rounded-lg">Правка ✏️</button>
+                  <button type="button" onClick={() => handleDeleteOrder(o.id)} className="text-red-500 font-bold bg-red-50 px-2 py-1 rounded-lg">🗑️</button>
                 </div>
               </div>
-              <p className="font-black text-base text-slate-900">{o.address}</p>
-              <p className="text-sm text-slate-800 font-medium">🛍️ {o.items}</p>
-              {o.comment && <p className="text-xs text-amber-800 font-mono bg-amber-50 p-2 rounded-xl">💡 {o.comment}</p>}
-              <div className="flex justify-between items-center text-xs pt-2 border-t border-slate-50 text-slate-500 font-medium">
-                <span>Курьер: <strong className="text-slate-900 font-bold">{couriers.find(c => c.username === o.courier_id)?.full_name || 'Не назначен'}</strong></span>
-                <span className="font-black text-slate-900 text-base">{o.price}</span>
-              </div>
+
             </div>
           ))
         )}
       </div>
 
+      {/* Шторка редактирования */}
       {editingOrder && (
         <ManagerEditModal 
           order={editingOrder} 
