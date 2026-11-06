@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
+import CourierOrderCard from './courier-order-card'; // Импортируем карточку
 
 export default function CourierDashboard({ username }: { username: string }) {
   const [orders, setOrders] = useState<any[]>([]);
@@ -19,7 +20,6 @@ export default function CourierDashboard({ username }: { username: string }) {
 
   const fetchData = async () => {
     if (!cleanUsername) return;
-    // Загружаем абсолютно все заказы курьера (теперь они не скрываются, а сортируются в реальном времени)
     const { data: oData } = await supabase.from('orders').select('*').eq('courier_id', cleanUsername).order('created_at', { ascending: false });
     if (oData) setOrders(oData);
     const { data: cData } = await supabase.from('app_users').select('username, full_name').eq('role', 'courier').order('id', { ascending: true });
@@ -28,24 +28,16 @@ export default function CourierDashboard({ username }: { username: string }) {
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(() => { fetchData(); }, 3000); // Поллинг для стабильности Safari iOS
+    const interval = setInterval(() => { fetchData(); }, 3000);
     return () => clearInterval(interval);
   }, [cleanUsername]);
 
-  // Обработчик ручной смены статуса курьером через выпадающий список
   const handleStatusChange = async (order: any, newStatus: string) => {
     if (newStatus === 'delivered' && order.type === 'minibus_send') {
-      // Если курьер выбрал выполнен для маршрутки — открываем шторку обратки
-      setActiveOrderForModal(order);
-      setReturnAddress(order.address || '');
-      setReturnTime(order.delivery_time || '');
-      setReturnDate(new Date().toISOString().split('T'));
-      setReturnCourier(cleanUsername);
-      setReturnComment('');
-      setIsFormOpen(false);
-      setShowMinibusModal(true);
+      setActiveOrderForModal(order); setReturnAddress(order.address || ''); setReturnTime(order.delivery_time || '');
+      setReturnDate(new Date().toISOString().split('T')); setReturnCourier(cleanUsername); setReturnComment('');
+      setIsFormOpen(false); setShowMinibusModal(true);
     } else {
-      // Для всех остальных статусов и типов заказов обновляем мгновенно
       await supabase.from('orders').update({ status: newStatus }).eq('id', order.id);
       fetchData();
     }
@@ -73,9 +65,18 @@ export default function CourierDashboard({ username }: { username: string }) {
     alert('Обратный заказ создан!');
   };
 
-  // Активные — это те, что менеджер или курьер держит в работе
   const activeOrders = orders.filter(o => o.status === 'new' || o.status === 'in_transit');
   const inactiveOrders = orders.filter(o => o.status === 'delivered' || o.status === 'canceled');
+
+  const getTypeName = (type: string) => {
+    const names: Record<string, string> = {
+      city_delivery: '🏙️ По городу', minibus_send: '🚌 Отправка маршруткой',
+      courier_service: '📦 Курьерская служба', pickup: '🏪 Самовывоз',
+      minibus_pickup: '📥 Забор маршрутки', errand: '🏃 Поручение'
+    };
+    return names[type] || type;
+  };
+
   return (
     <div className="max-w-md mx-auto space-y-6 text-slate-900">
       <div className="space-y-4">
@@ -87,42 +88,16 @@ export default function CourierDashboard({ username }: { username: string }) {
           <p className="text-gray-400 text-center py-8 bg-white rounded-3xl border border-dashed text-sm">Нет активных задач</p>
         ) : (
           activeOrders.map((order) => (
-            <div key={order.id} className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100 space-y-3">
-              <div className="flex justify-between items-center text-xs">
-                <span className="font-bold px-2.5 py-1 bg-slate-100 rounded-full">{getTypeName(order.type)}</span>
-                <span className="font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">{order.delivery_time || 'Время не указано'}</span>
-              </div>
-              <div className="flex items-start justify-between gap-2">
-                <p className="text-sm font-semibold">{order.address}</p>
-                <a href={`yandexmaps://maps.yandex.ru/?text=${encodeURIComponent(order.address)}`} className="bg-amber-100 text-amber-800 text-xs font-bold px-3 py-1.5 rounded-xl shrink-0">Карта 🗺️</a>
-              </div>
-              <p className="text-xs text-gray-500">Клиент: <a href={`tel:${order.phone}`} className="text-indigo-600 font-bold underline">{order.phone}</a></p>
-              <div className="text-sm bg-slate-50/50 p-3 rounded-xl border border-dashed">
-                <span className="font-medium">Товары:</span> {order.items}
-                {order.comment && <p className="text-xs text-amber-700 mt-1 font-mono">💡 {order.comment}</p>}
-              </div>
-              <div className="flex justify-between items-center pt-2 gap-2">
-                <p className="text-base font-black break-all flex-1">{order.price}</p>
-                
-                {/* ВЫПАДАЮЩИЙ СПИСОК ВЫБОРА СТАТУСА ДЛЯ КУРЬЕРА */}
-                <select 
-                  value={order.status} 
-                  onChange={(e) => handleStatusChange(order, e.target.value)}
-                  className="p-2 bg-slate-100 font-bold text-xs rounded-xl border-0 text-slate-800 focus:ring-2 focus:ring-indigo-500"
-                >
-                  <option value="new">🆕 Новый</option>
-                  <option value="in_transit">🚀 В пути</option>
-                  <option value="delivered">✅ Выполнено</option>
-                  <option value="canceled">🛑 Отказ</option>
-                </select>
-              </div>
-            </div>
+            <CourierOrderCard key={order.id} order={order} onStatusChange={handleStatusChange} getTypeName={getTypeName} />
           ))
         )}
       </div>
 
       <div className="space-y-3 pt-4 border-t border-gray-200">
-        <h2 className="text-sm font-black text-gray-400 uppercase tracking-wider px-1 flex justify-between items-center"><span>Завершенные и отказы</span><span className="bg-gray-100 text-gray-500 text-[10px] px-2 py-0.5 rounded-full">{inactiveOrders.length}</span></h2>
+        <h2 className="text-sm font-black text-gray-400 uppercase tracking-wider px-1 flex justify-between items-center">
+          <span>Завершенные и отказы</span>
+          <span className="bg-gray-100 text-gray-500 text-[10px] px-2 py-0.5 rounded-full">{inactiveOrders.length}</span>
+        </h2>
         <div className="space-y-2">
           {inactiveOrders.map((order) => (
             <div key={order.id} className="bg-gray-50/70 border border-gray-100 rounded-2xl p-3 flex justify-between items-center opacity-70">
@@ -132,17 +107,8 @@ export default function CourierDashboard({ username }: { username: string }) {
               </div>
               <div className="flex items-center gap-2 max-w-[50%] justify-end">
                 <p className="text-xs font-black text-gray-600 break-all">{order.price}</p>
-                
-                {/* ТАКЖЕ ДАЕМ ВОЗМОЖНОСТЬ ВЕРНУТЬ ИЗ АРХИВА */}
-                <select 
-                  value={order.status} 
-                  onChange={(e) => handleStatusChange(order, e.target.value)}
-                  className="p-1.5 bg-white font-bold text-[10px] rounded-lg border text-slate-800"
-                >
-                  <option value="new">🆕 Новый</option>
-                  <option value="in_transit">🚀 В пути</option>
-                  <option value="delivered">✅ Выполнено</option>
-                  <option value="canceled">🛑 Отказ</option>
+                <select value={order.status} onChange={(e) => handleStatusChange(order, e.target.value)} className="p-1.5 bg-white font-bold text-[10px] rounded-lg border text-slate-800">
+                  <option value="new">🆕 Новый</option><option value="in_transit">🚀 В пути</option><option value="delivered">✅ Выполнено</option><option value="canceled">🛑 Отказ</option>
                 </select>
               </div>
             </div>
@@ -181,9 +147,4 @@ export default function CourierDashboard({ username }: { username: string }) {
       )}
     </div>
   );
-}
-
-function getTypeName(t: string) {
-  const names: Record<string, string> = { city_delivery: '🏙️ Город', minibus_send: '🚌 Маршрутка', courier_service: '📦 Служба', pickup: '🏪 Самовывоз', minibus_pickup: '📥 Забор', errand: '🏃 Поручение' };
-  return names[t] || t;
 }
