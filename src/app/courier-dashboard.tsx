@@ -22,7 +22,6 @@ export default function CourierDashboard({ username }: CourierDashboardProps) {
   const [isFormOpen, setIsFormOpen] = useState(false);
 
   const fetchData = async () => {
-    // Загружаем ВСЕ заказы курьера (включая доставленные и отказы)
     const { data: oData } = await supabase
       .from('orders')
       .select('*')
@@ -90,8 +89,7 @@ export default function CourierDashboard({ username }: CourierDashboardProps) {
         phone: activeOrderForModal.phone,
         items: `${activeOrderForModal.items} (Обратка)`,
         price: activeOrderForModal.price,
-        currency: activeOrderForModal.currency,
-        usd_rate: activeOrderForModal.usd_rate,
+        currency: 'MULTI',
         comment: returnComment ? `Внесено курьером: ${returnComment}` : `Обратка к заказу №${activeOrderForModal.id}`,
         status: 'new',
         courier_id: returnCourier || null,
@@ -116,7 +114,6 @@ export default function CourierDashboard({ username }: CourierDashboardProps) {
     return names[type] || type;
   };
 
-  // Разделяем массив на активные и архивные
   const activeOrders = orders.filter(o => o.status === 'new' || o.status === 'in_transit');
   const inactiveOrders = orders.filter(o => o.status === 'delivered' || o.status === 'canceled');
   return (
@@ -165,8 +162,8 @@ export default function CourierDashboard({ username }: CourierDashboardProps) {
 
               <div className="flex justify-between items-center pt-2">
                 <div>
-                  <p className="text-lg font-black text-gray-900">{order.price} {order.currency}</p>
-                  <p className="text-[10px] text-gray-400">Курс: {order.usd_rate}</p>
+                  {/* Выводим только поле price, в котором уже хранится склеенная мультивалютная строка */}
+                  <p className="text-base font-black text-gray-900 break-all">{order.price}</p>
                 </div>
 
                 <button
@@ -194,30 +191,31 @@ export default function CourierDashboard({ username }: CourierDashboardProps) {
         <div className="space-y-2">
           {inactiveOrders.map((order) => (
             <div key={order.id} className="bg-gray-50/70 border border-gray-100 rounded-2xl p-3 flex justify-between items-center opacity-70">
-              <div className="space-y-0.5 max-w-[70%]">
+              <div className="space-y-0.5 max-w-[65%]">
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] font-bold text-gray-500 bg-gray-200/60 px-1.5 py-0.5 rounded">
-                    {getTypeName(order.type).split(' ')[0]} {/* Показываем только иконку для компактности */}
+                    {getTypeName(order.type).split(' ')[0]}
                   </span>
                   <p className="text-xs font-bold text-gray-700 truncate">{order.address}</p>
                 </div>
                 <p className="text-[10px] text-gray-400 truncate">🛍️ {order.items}</p>
               </div>
 
-              <div className="text-right">
+              <div className="text-right max-w-[35%]">
                 <span className={`inline-block text-[10px] font-black px-2 py-1 rounded-lg ${
                   order.status === 'delivered' ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'
                 }`}>
                   {order.status === 'delivered' ? 'Выполнено ✓' : 'ОТКАЗ 🛑'}
                 </span>
-                <p className="text-xs font-black text-gray-600 mt-0.5">{order.price} {order.currency}</p>
+                {/* В архиве тоже убираем currency и оставляем только чистую строку price */}
+                <p className="text-xs font-black text-gray-600 mt-0.5 break-all">{order.price}</p>
               </div>
             </div>
           ))}
         </div>
       </div>
 
-      {/* ШТОРКА ЗАВЕРШЕНИЯ МАРШРУТКИ С КАЛЕНДАРЕМ И ВЫБОРОМ КУРЬЕРА */}
+      {/* ШТОРКА ЗАВЕРШЕНИЯ МАРШРУТКИ */}
       {showMinibusModal && activeOrderForModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-end justify-center p-4 backdrop-blur-xs">
           <div className="bg-white w-full max-w-sm rounded-t-3xl p-6 space-y-4 shadow-xl text-left max-h-[90vh] overflow-y-auto">
@@ -230,25 +228,13 @@ export default function CourierDashboard({ username }: CourierDashboardProps) {
             
             {!isFormOpen ? (
               <div className="space-y-2">
-                <button
-                  type="button"
-                  onClick={() => setIsFormOpen(true)}
-                  className="w-full bg-indigo-600 text-white py-3.5 px-4 rounded-xl font-bold text-sm shadow-md active:scale-95 transition-all cursor-pointer"
-                >
+                <button type="button" onClick={() => setIsFormOpen(true)} className="w-full bg-indigo-600 text-white py-3.5 px-4 rounded-xl font-bold text-sm shadow-md active:scale-95 transition-all cursor-pointer">
                   🔄 С обраткой (заполнить данные)
                 </button>
-                <button
-                  type="button"
-                  onClick={() => finishOrderDelivery(activeOrderForModal.id)}
-                  className="w-full bg-gray-100 text-gray-700 py-3.5 px-4 rounded-xl font-bold text-sm active:scale-95 transition-all cursor-pointer"
-                >
+                <button type="button" onClick={() => finishOrderDelivery(activeOrderForModal.id)} className="w-full bg-gray-100 text-gray-700 py-3.5 px-4 rounded-xl font-bold text-sm active:scale-95 transition-all cursor-pointer">
                   ➡️ Без обратки (просто завершить)
                 </button>
-                <button
-                  type="button"
-                  onClick={() => { setShowMinibusModal(false); setActiveOrderForModal(null); }}
-                  className="w-full text-xs text-gray-400 py-2 text-center cursor-pointer"
-                >
+                <button type="button" onClick={() => { setShowMinibusModal(false); setActiveOrderForModal(null); }} className="w-full text-xs text-gray-400 py-2 text-center cursor-pointer">
                   Отмена
                 </button>
               </div>
