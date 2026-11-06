@@ -5,27 +5,24 @@ import { supabase } from '../lib/supabaseClient';
 export default function ManagerJournal() {
   const [allOrders, setAllOrders] = useState<any[]>([]);
   const [couriers, setCouriers] = useState<any[]>([]);
-  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T'));
+  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [selectedCourierFilter, setSelectedCourierFilter] = useState('all');
   const [editingOrder, setEditingOrder] = useState<any | null>(null);
   
-  // Обновленные текстовые состояния для окна редактирования
   const [editType, setEditType] = useState('');
   const [editCourier, setEditCourier] = useState('');
   const [editAddress, setEditAddress] = useState('');
   const [editTime, setEditTime] = useState('');
   const [editPhone, setEditPhone] = useState('');
-  const [editItems, setEditItems] = useState(''); // Строка товаров
-  const [editPriceString, setEditPriceString] = useState(''); // Текстовая мультивалютная цена
+  const [editItems, setEditItems] = useState('');
+  const [editPriceString, setEditPriceString] = useState('');
   const [editComment, setEditComment] = useState('');
   const [editStatus, setEditStatus] = useState('new');
 
-  const fetchCouriers = async () => {
-    const { data } = await supabase.from('app_users').select('username, full_name').eq('role', 'courier');
-    if (data) setCouriers(data);
-  };
-
-  const fetchAllOrders = async () => {
+  const fetchData = async () => {
+    const { data: cData } = await supabase.from('app_users').select('username, full_name').eq('role', 'courier');
+    if (cData) setCouriers(cData);
+    
     const start = `${selectedDate}T00:00:00.000Z`;
     const end = `${selectedDate}T23:59:59.999Z`;
     let query = supabase.from('orders').select('*').gte('created_at', start).lte('created_at', end);
@@ -36,64 +33,35 @@ export default function ManagerJournal() {
       query = query.eq('courier_id', selectedCourierFilter);
     }
 
-    const { data } = await query.order('created_at', { ascending: false });
-    if (data) setAllOrders(data);
+    const { data: oData } = await query.order('created_at', { ascending: false });
+    if (oData) setAllOrders(oData);
   };
 
-  useEffect(() => { fetchCouriers(); }, []);
-
-  useEffect(() => {
-    fetchAllOrders();
-    const channel = supabase
-      .channel('manager-realtime-journal')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
-        fetchAllOrders();
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [selectedDate, selectedCourierFilter]);
+  useEffect(() => { fetchData(); }, [selectedDate, selectedCourierFilter]);
 
   const handleDeleteOrder = async (id: number) => {
-    if (window.confirm(`Вы уверены, что хотите ПОЛНОСТЬЮ УДАЛИТЬ заказ №${id}? Это действие необратимо.`)) {
-      const { error } = await supabase.from('orders').delete().eq('id', id);
-      if (error) alert('Ошибка удаления: ' + error.message);
-      else fetchAllOrders();
+    if (window.confirm(`Вы уверены, что хотите ПОЛНОСТЬЮ УДАЛИТЬ заказ №${id}?`)) {
+      await supabase.from('orders').delete().eq('id', id);
+      fetchData();
     }
   };
 
-  // Предзаполняем поля модалки текущими значениями из базы
   const startEdit = (o: any) => {
-    setEditingOrder(o); 
-    setEditType(o.type); 
-    setEditCourier(o.courier_id || '');
-    setEditAddress(o.address || ''); 
-    setEditTime(o.delivery_time || ''); 
-    setEditPhone(o.phone || '');
-    setEditItems(o.items || ''); 
-    setEditPriceString(o.price || ''); // Сюда падает строка вида "700 RUB + 70 BYN"
-    setEditComment(o.comment || ''); 
-    setEditStatus(o.status || 'new');
+    setEditingOrder(o); setEditType(o.type); setEditCourier(o.courier_id || '');
+    setEditAddress(o.address || ''); setEditTime(o.delivery_time || ''); setEditPhone(o.phone || '');
+    setEditItems(o.items || ''); setEditPriceString(o.price || ''); setEditComment(o.comment || ''); setEditStatus(o.status || 'new');
   };
 
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingOrder) return;
-    
-    // Сохраняем измененные менеджером строки напрямую в текстовые поля базы данных
     await supabase.from('orders').update({
-      type: editType, 
-      courier_id: editCourier || null, 
-      address: editAddress,
-      delivery_time: editTime, 
-      phone: editPhone, 
-      items: editItems,
-      price: editPriceString, // Отправляем обновленный вручную мультивалютный текст
-      comment: editComment, 
-      status: editStatus
+      type: editType, courier_id: editCourier || null, address: editAddress,
+      delivery_time: editTime, phone: editPhone, items: editItems,
+      price: editPriceString, comment: editComment, status: editStatus
     }).eq('id', editingOrder.id);
-    
     setEditingOrder(null);
-    fetchAllOrders();
+    fetchData();
   };
 
   const getTypeName = (t: string) => {
@@ -104,47 +72,37 @@ export default function ManagerJournal() {
     };
     return names[t] || t;
   };
+
   return (
     <div className="space-y-4">
-      {/* Календарь и Фильтр по курьерам */}
       <div className="bg-white rounded-3xl p-4 shadow-sm border border-gray-100 space-y-3">
         <div className="flex items-center justify-between">
-          <span className="text-sm font-bold text-gray-700">Дата просмотра:</span>
+          <span className="text-sm font-bold text-gray-700">Дата:</span>
           <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="p-2 bg-gray-50 rounded-xl text-sm font-semibold border-0 text-gray-800" />
         </div>
-        
         <div className="flex items-center justify-between border-t pt-2">
-          <span className="text-sm font-bold text-gray-700">Фильтр по курьеру:</span>
+          <span className="text-sm font-bold text-gray-700">Курьер:</span>
           <select value={selectedCourierFilter} onChange={(e) => setSelectedCourierFilter(e.target.value)} className="p-2 bg-gray-50 rounded-xl text-sm font-semibold border-0 text-gray-800">
-            <option value="all">👀 Все курьеры</option>
-            <option value="none">🛑 Не назначены</option>
-            {couriers.map((c) => (
-              <option key={c.username} value={c.username}>👤 {c.full_name}</option>
-            ))}
+            <option value="all">👀 Все</option><option value="none">🛑 Не назначены</option>
+            {couriers.map((c) => <option key={c.username} value={c.username}>👤 {c.full_name}</option>)}
           </select>
         </div>
       </div>
 
-      {/* Список заказов */}
       <div className="space-y-3">
         {allOrders.length === 0 ? (
-          <p className="text-gray-400 text-center py-8 bg-white rounded-3xl border border-dashed">Заказов не найдено</p>
+          <p className="text-gray-400 text-center py-8 bg-white rounded-3xl border border-dashed text-sm">Заказов не найдено</p>
         ) : (
           allOrders.map((o) => (
             <div key={o.id} className="bg-white rounded-3xl p-4 shadow-sm border border-gray-100 space-y-2">
               <div className="flex justify-between items-center text-xs">
                 <span className="font-bold px-2 py-0.5 bg-slate-100 text-slate-700 rounded-full">{getTypeName(o.type)}</span>
                 <div className="flex items-center gap-2">
-                  <span className={`px-2 py-0.5 rounded font-bold ${
-                    o.status === 'new' ? 'bg-blue-50 text-blue-600' : 
-                    o.status === 'in_transit' ? 'bg-amber-50 text-amber-600' : 
-                    o.status === 'delivered' ? 'bg-emerald-50 text-emerald-600' :
-                    'bg-red-50 text-red-600'
-                  }`}>
+                  <span className={`px-2 py-0.5 rounded font-bold ${o.status === 'new' ? 'bg-blue-50 text-blue-600' : o.status === 'in_transit' ? 'bg-amber-50 text-amber-600' : o.status === 'delivered' ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
                     {o.status === 'new' ? 'Новый' : o.status === 'in_transit' ? 'В пути' : o.status === 'delivered' ? 'Доставлен' : 'Отказ'}
                   </span>
-                  <button type="button" onClick={() => startEdit(o)} className="text-indigo-600 font-bold bg-indigo-50 px-2 py-0.5 rounded cursor-pointer">Правка ✏️</button>
-                  <button type="button" onClick={() => handleDeleteOrder(o.id)} className="text-red-500 font-bold bg-red-50 px-2 py-0.5 rounded cursor-pointer">🗑️</button>
+                  <button type="button" onClick={() => startEdit(o)} className="text-indigo-600 font-bold bg-indigo-50 px-2 py-0.5 rounded text-xs cursor-pointer">Правка ✏️</button>
+                  <button type="button" onClick={() => handleDeleteOrder(o.id)} className="text-red-500 font-bold bg-red-50 px-2 py-0.5 rounded text-xs cursor-pointer">🗑️</button>
                 </div>
               </div>
               <p className="text-sm font-bold text-gray-800">{o.address}</p>
@@ -159,65 +117,26 @@ export default function ManagerJournal() {
         )}
       </div>
 
-      {/* ВСПЛЫВАЮЩЕЕ ОКНО РЕДАКТИРОВАНИЯ */}
       {editingOrder && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4 backdrop-blur-xs">
-          <div className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 max-h-[90vh] overflow-y-auto space-y-4 shadow-xl">
-            <div className="flex justify-between items-center border-b pb-3">
-              <h3 className="text-lg font-bold text-gray-800">Заказ №{editingOrder.id}</h3>
-              <button type="button" onClick={() => setEditingOrder(null)} className="text-gray-400 font-bold text-lg p-1">✕</button>
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-end justify-center p-4 backdrop-blur-xs">
+          <div className="bg-white w-full max-w-sm rounded-t-3xl p-5 space-y-3 shadow-xl max-h-[85vh] overflow-y-auto text-sm text-gray-700">
+            <div className="flex justify-between items-center border-b pb-2">
+              <h3 className="text-base font-bold text-gray-800">Заказ №{editingOrder.id}</h3>
+              <button type="button" onClick={() => setEditingOrder(null)} className="text-gray-400 font-bold p-1">✕</button>
             </div>
-            
             <form onSubmit={handleUpdate} className="space-y-3">
-              <div>
-                <label className="block text-xs font-bold text-gray-500 mb-1">Статус</label>
-                <select value={editStatus} onChange={(e) => setEditStatus(e.target.value)} className="w-full p-2.5 bg-gray-50 rounded-xl text-sm border-0 text-gray-800">
-                  <option value="new">Новый</option>
-                  <option value="in_transit">В пути</option>
-                  <option value="delivered">Доставлен</option>
-                  <option value="canceled">Отказ 🛑</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-gray-500 mb-1">Тип</label>
-                <select value={editType} onChange={(e) => setEditType(e.target.value)} className="w-full p-2.5 bg-gray-50 rounded-xl text-sm border-0 text-gray-800">
-                  <option value="city_delivery">Доставка по городу</option><option value="minibus_send">Отправка маршруткой</option><option value="courier_service">Доставка курьерской службой</option><option value="pickup">Самовывоз</option><option value="minibus_pickup">Забор маршрутки</option><option value="errand">Поручение</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-gray-500 mb-1">Курьер</label>
-                <select value={editCourier} onChange={(e) => setEditCourier(e.target.value)} className="w-full p-2.5 bg-gray-50 rounded-xl text-sm border-0 text-gray-800">
-                  <option value="">-- Общий пул --</option>
-                  {couriers.map((c) => <option key={c.username} value={c.username}>{c.full_name}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-gray-500 mb-1">Адрес</label>
-                <input type="text" value={editAddress} onChange={(e) => setEditAddress(e.target.value)} required className="w-full p-2.5 bg-gray-50 rounded-xl text-sm border-0 text-gray-800" />
-              </div>
+              <select value={editStatus} onChange={(e) => setEditStatus(e.target.value)} className="w-full p-2.5 bg-gray-50 rounded-xl border-0 text-sm"><option value="new">Новый</option><option value="in_transit">В пути</option><option value="delivered">Доставлен</option><option value="canceled">Отказ 🛑</option></select>
+              <select value={editType} onChange={(e) => setEditType(e.target.value)} className="w-full p-2.5 bg-gray-50 rounded-xl border-0 text-sm"><option value="city_delivery">По городу</option><option value="minibus_send">Отправка маршруткой</option><option value="courier_service">Курьерская служба</option><option value="pickup">Самовывоз</option><option value="minibus_pickup">Забор маршрутки</option><option value="errand">Поручение</option></select>
+              <select value={editCourier} onChange={(e) => setEditCourier(e.target.value)} className="w-full p-2.5 bg-gray-50 rounded-xl border-0 text-sm"><option value="">-- Общий пул --</option>{couriers.map((c) => <option key={c.username} value={c.username}>{c.full_name}</option>)}</select>
+              <input type="text" value={editAddress} onChange={(e) => setEditAddress(e.target.value)} required placeholder="Адрес" className="w-full p-2.5 bg-gray-50 rounded-xl border-0 text-sm" />
               <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-xs font-bold text-gray-500 mb-1">Время</label>
-                  <input type="text" value={editTime} onChange={(e) => setEditTime(e.target.value)} placeholder="Время" className="w-full p-2.5 bg-gray-50 rounded-xl text-sm border-0 text-gray-800" />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-gray-500 mb-1">Телефон</label>
-                  <input type="tel" value={editPhone} onChange={(e) => setEditPhone(e.target.value)} required placeholder="Телефон" className="w-full p-2.5 bg-gray-50 rounded-xl text-sm border-0 text-gray-800" />
-                </div>
+                <input type="text" value={editTime} onChange={(e) => setEditTime(e.target.value)} placeholder="Время" className="w-full p-2.5 bg-gray-50 rounded-xl border-0 text-xs" />
+                <input type="tel" value={editPhone} onChange={(e) => setEditPhone(e.target.value)} required placeholder="Телефон" className="w-full p-2.5 bg-gray-50 rounded-xl border-0 text-xs" />
               </div>
-              <div>
-                <label className="block text-xs font-bold text-gray-500 mb-1">Товары в заказе</label>
-                <input type="text" value={editItems} onChange={(e) => setEditItems(e.target.value)} required className="w-full p-2.5 bg-gray-50 rounded-xl text-sm border-0 text-gray-800" />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-gray-500 mb-1">Сумма к оплате (Мультивалютная строка)</label>
-                <input type="text" value={editPriceString} onChange={(e) => setEditPriceString(e.target.value)} required placeholder="Например: 700 RUB + 70 BYN" className="w-full p-2.5 bg-gray-50 rounded-xl text-sm border-0 text-gray-800 font-mono" />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-gray-500 mb-1">Комментарий</label>
-                <input type="text" value={editComment} onChange={(e) => setEditComment(e.target.value)} placeholder="Комментарий" className="w-full p-2.5 bg-gray-50 rounded-xl text-sm border-0 text-gray-800" />
-              </div>
-              <button type="submit" className="w-full bg-indigo-600 text-white p-3.5 rounded-xl font-bold active:scale-95 transition-all cursor-pointer">Сохранить</button>
+              <input type="text" value={editItems} onChange={(e) => setEditItems(e.target.value)} required placeholder="Товары" className="w-full p-2.5 bg-gray-50 rounded-xl border-0 text-sm" />
+              <input type="text" value={editPriceString} onChange={(e) => setEditPriceString(e.target.value)} required placeholder="Цена (например: 700 RUB + 70 BYN)" className="w-full p-2.5 bg-gray-50 rounded-xl border-0 text-sm font-mono" />
+              <input type="text" value={editComment} onChange={(e) => setEditComment(e.target.value)} placeholder="Комментарий" className="w-full p-2.5 bg-gray-50 rounded-xl border-0 text-sm" />
+              <button type="submit" className="w-full bg-indigo-600 text-white p-3 rounded-xl font-bold cursor-pointer active:scale-95 transition-transform">Сохранить</button>
             </form>
           </div>
         </div>
