@@ -10,7 +10,7 @@ export default function CourierDashboard({ username }: { username: string }) {
   
   const [returnAddress, setReturnAddress] = useState('');
   const [returnTime, setReturnTime] = useState('');
-  const [returnDate, setReturnDate] = useState(() => new Date().toISOString().split('T'));
+  const [returnDate, setReturnDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [returnCourier, setReturnCourier] = useState(username);
   const [returnComment, setReturnComment] = useState('');
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -26,18 +26,9 @@ export default function CourierDashboard({ username }: { username: string }) {
   };
 
   useEffect(() => {
-    // 1. Первая мгновенная загрузка при открытии приложения
     fetchData();
-
-    // 2. Железобетонный фоновый таймер: каждые 3 секунды проверяем базу данных.
-    // Это гарантирует прилет заказов на iOS Safari, даже если соединение "уснуло".
-    const interval = setInterval(() => {
-      fetchData();
-    }, 3000); 
-
-    return () => {
-      clearInterval(interval); // Чистим память при закрытии вкладки
-    };
+    const interval = setInterval(() => { fetchData(); }, 3000); // Поллинг каждые 3 секунды для iOS Safari
+    return () => clearInterval(interval);
   }, [cleanUsername]);
 
   const handleStatusButtonClick = async (order: any) => {
@@ -47,7 +38,7 @@ export default function CourierDashboard({ username }: { username: string }) {
     } else if (order.status === 'in_transit') {
       if (order.type === 'minibus_send') {
         setActiveOrderForModal(order); setReturnAddress(order.address || ''); setReturnTime(order.delivery_time || '');
-        setReturnDate(new Date().toISOString().split('T')); setReturnCourier(cleanUsername); setReturnComment('');
+        setReturnDate(new Date().toISOString().split('T')[0]); setReturnCourier(cleanUsername); setReturnComment('');
         setIsFormOpen(false); setShowMinibusModal(true);
       } else {
         await finishOrderDelivery(order.id);
@@ -79,6 +70,7 @@ export default function CourierDashboard({ username }: { username: string }) {
 
   const activeOrders = orders.filter(o => o.status === 'new' || o.status === 'in_transit');
   const inactiveOrders = orders.filter(o => o.status === 'delivered' || o.status === 'canceled');
+
   return (
     <div className="max-w-md mx-auto space-y-6 text-slate-900">
       <div className="space-y-4">
@@ -87,7 +79,7 @@ export default function CourierDashboard({ username }: { username: string }) {
           <span className="text-xs bg-indigo-50 text-indigo-600 font-bold px-2 py-1 rounded-full">{activeOrders.length}</span>
         </h2>
         {activeOrders.length === 0 ? (
-          <p className="text-gray-400 text-center py-8 bg-white rounded-3xl border border-dashed text-sm">Нет active_orders активных задач</p>
+          <p className="text-gray-400 text-center py-8 bg-white rounded-3xl border border-dashed text-sm">Нет активных задач</p>
         ) : (
           activeOrders.map((order) => (
             <div key={order.id} className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100 space-y-3">
@@ -95,40 +87,22 @@ export default function CourierDashboard({ username }: { username: string }) {
                 <span className="font-bold px-2.5 py-1 bg-slate-100 rounded-full">{getTypeName(order.type)}</span>
                 <span className="font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">{order.delivery_time || 'Время не указано'}</span>
               </div>
-              <div className="flex items-start justify-between gap-2">
-                <p className="text-sm font-semibold">{order.address}</p>
-                <a href={`yandexmaps://maps.yandex.ru/?text=${encodeURIComponent(order.address)}`} className="bg-amber-100 text-amber-800 text-xs font-bold px-3 py-1.5 rounded-xl shrink-0">Карта 🗺️</a>
-              </div>
+              <div className="flex items-start justify-between gap-2"><p className="text-sm font-semibold">{order.address}</p><a href={`yandexmaps://maps.yandex.ru/?text=${encodeURIComponent(order.address)}`} className="bg-amber-100 text-amber-800 text-xs font-bold px-3 py-1.5 rounded-xl shrink-0">Карта 🗺️</a></div>
               <p className="text-xs text-gray-500">Клиент: <a href={`tel:${order.phone}`} className="text-indigo-600 font-bold underline">{order.phone}</a></p>
-              <div className="text-sm bg-slate-50/50 p-3 rounded-xl border border-dashed">
-                <span className="font-medium">Товары:</span> {order.items}
-                {order.comment && <p className="text-xs text-amber-700 mt-1 font-mono">💡 {order.comment}</p>}
-              </div>
-              <div className="flex justify-between items-center pt-2">
-                <p className="text-base font-black break-all">{order.price}</p>
-                <button type="button" onClick={() => handleStatusButtonClick(order)} className="px-4 py-2.5 bg-blue-600 text-white rounded-xl text-xs font-bold shadow-sm">{order.status === 'new' ? 'В путь 🚀' : 'Доставлен ✅'}</button>
-              </div>
+              <div className="text-sm bg-slate-50/50 p-3 rounded-xl border border-dashed"><span className="font-medium">Товары:</span> {order.items}{order.comment && <p className="text-xs text-amber-700 mt-1 font-mono">💡 {order.comment}</p>}</div>
+              <div className="flex justify-between items-center pt-2"><p className="text-base font-black break-all">{order.price}</p><button type="button" onClick={() => handleStatusButtonClick(order)} className="px-4 py-2.5 bg-blue-600 text-white rounded-xl text-xs font-bold shadow-sm">{order.status === 'new' ? 'В путь 🚀' : 'Доставлен ✅'}</button></div>
             </div>
           ))
         )}
       </div>
 
       <div className="space-y-3 pt-4 border-t border-gray-200">
-        <h2 className="text-sm font-black text-gray-400 uppercase tracking-wider px-1 flex justify-between items-center">
-          <span>Завершенные и отказы</span>
-          <span className="bg-gray-100 text-gray-500 text-[10px] px-2 py-0.5 rounded-full">{inactiveOrders.length}</span>
-        </h2>
+        <h2 className="text-sm font-black text-gray-400 uppercase tracking-wider px-1 flex justify-between items-center"><span>Завершенные и отказы</span><span className="bg-gray-100 text-gray-500 text-[10px] px-2 py-0.5 rounded-full">{inactiveOrders.length}</span></h2>
         <div className="space-y-2">
           {inactiveOrders.map((order) => (
             <div key={order.id} className="bg-gray-50/70 border border-gray-100 rounded-2xl p-3 flex justify-between items-center opacity-70">
-              <div className="space-y-0.5 max-w-[65%]">
-                <p className="text-xs font-bold truncate">{order.address}</p>
-                <p className="text-[10px] text-gray-400 truncate">🛍️ {order.items}</p>
-              </div>
-              <div className="text-right max-w-[35%]">
-                <span className={`inline-block text-[10px] font-black px-2 py-1 rounded-lg ${order.status === 'delivered' ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>{order.status === 'delivered' ? 'Выполнено ✓' : 'ОТКАЗ 🛑'}</span>
-                <p className="text-xs font-black text-gray-600 mt-0.5 break-all">{order.price}</p>
-              </div>
+              <div className="space-y-0.5 max-w-[65%]"><p className="text-xs font-bold truncate">{order.address}</p><p className="text-[10px] text-gray-400 truncate">🛍️ {order.items}</p></div>
+              <div className="text-right max-w-[35%]"><span className={`inline-block text-[10px] font-black px-2 py-1 rounded-lg ${order.status === 'delivered' ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>{order.status === 'delivered' ? 'Выполнено ✓' : 'ОТКАЗ 🛑'}</span><p className="text-xs font-black text-gray-600 mt-0.5 break-all">{order.price}</p></div>
             </div>
           ))}
         </div>
@@ -168,6 +142,6 @@ export default function CourierDashboard({ username }: { username: string }) {
 }
 
 function getTypeName(t: string) {
-  const names: Record<string, string> = { city_delivery: '🏙️ Город', minibus_send: '🚌 Маршрутка', courier_service: '📦 Служба', pickup: '🏪 Самовывоз', minibus_pickup: '📥 Забор', errand: '🏃 Поручение' };
+  const names: Record<string, string> = { city_delivery: '🏙 *Город*', minibus_send: '🚌 *Маршрутка*', courier_service: '📦 *Служба*', pickup: '🏪 *Самовывоз*', minibus_pickup: '📥 *Забор*', errand: '🏃 *Поручение*' };
   return names[t] || t;
 }
