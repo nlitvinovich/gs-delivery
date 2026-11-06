@@ -2,22 +2,31 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
 
+interface EditOrderItem {
+  name: string;
+  price: string;
+  currency: string;
+}
+
 export default function ManagerJournal() {
   const [allOrders, setAllOrders] = useState<any[]>([]);
   const [couriers, setCouriers] = useState<any[]>([]);
-  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T'));
   const [selectedCourierFilter, setSelectedCourierFilter] = useState('all');
   const [editingOrder, setEditingOrder] = useState<any | null>(null);
   
+  // Базовые поля
   const [editType, setEditType] = useState('');
   const [editCourier, setEditCourier] = useState('');
   const [editAddress, setEditAddress] = useState('');
   const [editTime, setEditTime] = useState('');
   const [editPhone, setEditPhone] = useState('');
-  const [editItems, setEditItems] = useState('');
-  const [editPriceString, setEditPriceString] = useState('');
   const [editComment, setEditComment] = useState('');
   const [editStatus, setEditStatus] = useState('new');
+
+  // Динамический массив товаров для редактирования
+  const [editItemsList, setEditItemsList] = useState<EditOrderItem[]>([{ name: '', price: '', currency: 'BYN' }]);
+  const [computedPriceString, setComputedPriceString] = useState('0.00 BYN');
 
   const fetchData = async () => {
     const { data: cData } = await supabase.from('app_users').select('username, full_name').eq('role', 'courier');
@@ -26,18 +35,27 @@ export default function ManagerJournal() {
     const start = `${selectedDate}T00:00:00.000Z`;
     const end = `${selectedDate}T23:59:59.999Z`;
     let query = supabase.from('orders').select('*').gte('created_at', start).lte('created_at', end);
-
-    if (selectedCourierFilter === 'none') {
-      query = query.is('courier_id', null);
-    } else if (selectedCourierFilter !== 'all') {
-      query = query.eq('courier_id', selectedCourierFilter);
-    }
+    if (selectedCourierFilter === 'none') query = query.is('courier_id', null);
+    else if (selectedCourierFilter !== 'all') query = query.eq('courier_id', selectedCourierFilter);
 
     const { data: oData } = await query.order('created_at', { ascending: false });
     if (oData) setAllOrders(oData);
   };
 
   useEffect(() => { fetchData(); }, [selectedDate, selectedCourierFilter]);
+
+  // Считаем итог в модалке на лету при изменении любых полей товаров
+  useEffect(() => {
+    const totals: Record<string, number> = {};
+    editItemsList.forEach((item) => {
+      const itemPrice = parseFloat(item.price);
+      if (!isNaN(itemPrice) && itemPrice > 0) {
+        totals[item.currency] = (totals[item.currency] || 0) + itemPrice;
+      }
+    });
+    const parts = Object.entries(totals).map(([curr, sum]) => `${sum.toFixed(2)} ${curr}`);
+    setComputedPriceString(parts.length > 0 ? parts.join(' + ') : '0.00 BYN');
+  }, [editItemsList]);
 
   const handleDeleteOrder = async (id: number) => {
     if (window.confirm(`Вы уверены, что хотите ПОЛНОСТЬЮ УДАЛИТЬ заказ №${id}?`)) {
@@ -46,20 +64,57 @@ export default function ManagerJournal() {
     }
   };
 
+  // Попытка разобрать склеенную строку товаров обратно на массив для удобной формы
   const startEdit = (o: any) => {
     setEditingOrder(o); setEditType(o.type); setEditCourier(o.courier_id || '');
     setEditAddress(o.address || ''); setEditTime(o.delivery_time || ''); setEditPhone(o.phone || '');
-    setEditItems(o.items || ''); setEditPriceString(o.price || ''); setEditComment(o.comment || ''); setEditStatus(o.status || 'new');
+    setEditComment(o.comment || ''); setEditStatus(o.status || 'new');
+
+    try {
+      // Пример строки: "Товар 1 (100 USD), Товар 2 (50 BYN)"
+      if (o.items && o.items.includes('(')) {
+        const parts = o.items.split(', ');
+        const parsedItems = parts.map((p: string) => {
+          const match = p.match(/(.*)\s\(([\d.]+)\s(BYN|USD|RUB)\)/);
+          if (match) {
+            return { name: match[1].trim(), price: match[2], currency: match[3] };
+          }
+          return { name: p, price: '', currency: 'BYN' };
+        });
+        setEditItemsList(parsedItems);
+      } else {
+        setEditItemsList([{ name: o.items || '', price: o.price || '', currency: 'BYN' }]);
+      }
+    } catch (e) {
+      setEditItemsList([{ name: o.items || '', price: '', currency: 'BYN' }]);
+    }
+  };
+
+  const handleAddEditItem = () => setItemsList([...editItemsList, { name: '', price: '', currency: 'BYN' }]);
+  const handleRemoveEditItem = (index: number) => {
+    if (editItemsList.length > 1) setEditItemsList(editItemsList.filter((_, i) => i !== index));
+  };
+  const handleEditItemChange = (index: number, field: keyof EditOrderItem, value: string) => {
+    const updated = [...editItemsList];
+    updated[index][field] = value;
+    setEditItemsList(updated);
   };
 
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingOrder) return;
+
+    const finalItemsText = editItemsList
+      .filter(item => item.name.trim().length > 0)
+      .map(item => `${item.name.trim()} (${item.price || 0} ${item.currency})`)
+      .join(', ');
+
     await supabase.from('orders').update({
       type: editType, courier_id: editCourier || null, address: editAddress,
-      delivery_time: editTime, phone: editPhone, items: editItems,
-      price: editPriceString, comment: editComment, status: editStatus
+      delivery_time: editTime, phone: editPhone, items: finalItemsText,
+      price: computedPriceString, comment: editComment, status: editStatus
     }).eq('id', editingOrder.id);
+    
     setEditingOrder(null);
     fetchData();
   };
@@ -72,9 +127,9 @@ export default function ManagerJournal() {
     };
     return names[t] || t;
   };
-
   return (
     <div className="space-y-4">
+      {/* Календарь и Фильтр по курьерам */}
       <div className="bg-white rounded-3xl p-4 shadow-sm border border-gray-100 space-y-3">
         <div className="flex items-center justify-between">
           <span className="text-sm font-bold text-gray-700">Дата:</span>
@@ -89,6 +144,7 @@ export default function ManagerJournal() {
         </div>
       </div>
 
+      {/* Список заказов */}
       <div className="space-y-3">
         {allOrders.length === 0 ? (
           <p className="text-gray-400 text-center py-8 bg-white rounded-3xl border border-dashed text-sm">Заказов не найдено</p>
@@ -117,6 +173,7 @@ export default function ManagerJournal() {
         )}
       </div>
 
+      {/* ВСПЛЫВАЮЩЕЕ ОКНО РЕДАКТИРОВАНИЯ */}
       {editingOrder && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-end justify-center p-4 backdrop-blur-xs">
           <div className="bg-white w-full max-w-sm rounded-t-3xl p-5 space-y-3 shadow-xl max-h-[85vh] overflow-y-auto text-sm text-gray-700">
@@ -133,8 +190,30 @@ export default function ManagerJournal() {
                 <input type="text" value={editTime} onChange={(e) => setEditTime(e.target.value)} placeholder="Время" className="w-full p-2.5 bg-gray-50 rounded-xl border-0 text-xs" />
                 <input type="tel" value={editPhone} onChange={(e) => setEditPhone(e.target.value)} required placeholder="Телефон" className="w-full p-2.5 bg-gray-50 rounded-xl border-0 text-xs" />
               </div>
-              <input type="text" value={editItems} onChange={(e) => setEditItems(e.target.value)} required placeholder="Товары" className="w-full p-2.5 bg-gray-50 rounded-xl border-0 text-sm" />
-              <input type="text" value={editPriceString} onChange={(e) => setEditPriceString(e.target.value)} required placeholder="Цена (например: 700 RUB + 70 BYN)" className="w-full p-2.5 bg-gray-50 rounded-xl border-0 text-sm font-mono" />
+
+              {/* ДИНАМИЧЕСКИЙ СПИСОК ТОВАРОВ В МОДAЛКЕ */}
+              <div className="space-y-2 border-t pt-2 border-b pb-2">
+                <label className="block text-xs font-bold text-gray-500">Товары и цены</label>
+                {editItemsList.map((item, index) => (
+                  <div key={index} className="flex gap-1 items-center">
+                    <input type="text" value={item.name} onChange={(e) => handleEditItemChange(index, 'name', e.target.value)} required placeholder="Товар" className="flex-1 p-2 bg-gray-50 rounded-xl border-0 text-xs text-gray-800" />
+                    <input type="number" step="0.01" value={item.price} onChange={(e) => handleEditItemChange(index, 'price', e.target.value)} required placeholder="Цена" className="w-14 p-2 bg-gray-50 rounded-xl border-0 text-xs text-center text-gray-800" />
+                    <select value={item.currency} onChange={(e) => handleEditItemChange(index, 'currency', e.target.value)} className="w-14 p-2 bg-gray-50 rounded-xl border-0 text-[10px] text-center font-bold">
+                      <option value="BYN">BYN</option><option value="USD">USD</option><option value="RUB">RUB</option>
+                    </select>
+                    {editItemsList.length > 1 && (
+                      <button type="button" onClick={() => handleRemoveEditItem(index)} className="p-2 text-red-500 bg-red-50 rounded-xl text-xs font-bold">✕</button>
+                    )}
+                  </div>
+                ))}
+                <button type="button" onClick={handleAddEditItem} className="inline-flex text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-1.5 rounded-lg">+ Добавить позицию</button>
+              </div>
+
+              {/* АВТОМАТИЧЕСКИЙ СВЕРНУТЫЙ ИТОГ */}
+              <div className="bg-slate-50 p-2.5 rounded-xl text-center font-mono text-xs font-bold text-slate-800 border">
+                Итог: {computedPriceString}
+              </div>
+
               <input type="text" value={editComment} onChange={(e) => setEditComment(e.target.value)} placeholder="Комментарий" className="w-full p-2.5 bg-gray-50 rounded-xl border-0 text-sm" />
               <button type="submit" className="w-full bg-indigo-600 text-white p-3 rounded-xl font-bold cursor-pointer active:scale-95 transition-transform">Сохранить</button>
             </form>
