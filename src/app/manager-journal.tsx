@@ -5,20 +5,18 @@ import { supabase } from '../lib/supabaseClient';
 export default function ManagerJournal() {
   const [allOrders, setAllOrders] = useState<any[]>([]);
   const [couriers, setCouriers] = useState<any[]>([]);
-  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T'));
   const [selectedCourierFilter, setSelectedCourierFilter] = useState('all');
   const [editingOrder, setEditingOrder] = useState<any | null>(null);
   
-  // Состояния полей редактирования
+  // Обновленные текстовые состояния для окна редактирования
   const [editType, setEditType] = useState('');
   const [editCourier, setEditCourier] = useState('');
   const [editAddress, setEditAddress] = useState('');
   const [editTime, setEditTime] = useState('');
   const [editPhone, setEditPhone] = useState('');
-  const [editItems, setEditItems] = useState('');
-  const [editPrice, setEditPrice] = useState('');
-  const [editCurrency, setEditCurrency] = useState('BYN');
-  const [editUsdRate, setEditUsdRate] = useState('3.30');
+  const [editItems, setEditItems] = useState(''); // Строка товаров
+  const [editPriceString, setEditPriceString] = useState(''); // Текстовая мультивалютная цена
   const [editComment, setEditComment] = useState('');
   const [editStatus, setEditStatus] = useState('new');
 
@@ -55,7 +53,6 @@ export default function ManagerJournal() {
     return () => { supabase.removeChannel(channel); };
   }, [selectedDate, selectedCourierFilter]);
 
-  // Функция ПОЛНОГО УДАЛЕНИЯ заказа с подтверждением
   const handleDeleteOrder = async (id: number) => {
     if (window.confirm(`Вы уверены, что хотите ПОЛНОСТЬЮ УДАЛИТЬ заказ №${id}? Это действие необратимо.`)) {
       const { error } = await supabase.from('orders').delete().eq('id', id);
@@ -64,22 +61,37 @@ export default function ManagerJournal() {
     }
   };
 
+  // Предзаполняем поля модалки текущими значениями из базы
   const startEdit = (o: any) => {
-    setEditingOrder(o); setEditType(o.type); setEditCourier(o.courier_id || '');
-    setEditAddress(o.address || ''); setEditTime(o.delivery_time || ''); setEditPhone(o.phone || '');
-    setEditItems(o.items || ''); setEditPrice(o.price?.toString() || ''); setEditCurrency(o.currency || 'BYN');
-    setEditUsdRate(o.usd_rate?.toString() || '3.30'); setEditComment(o.comment || ''); setEditStatus(o.status || 'new');
+    setEditingOrder(o); 
+    setEditType(o.type); 
+    setEditCourier(o.courier_id || '');
+    setEditAddress(o.address || ''); 
+    setEditTime(o.delivery_time || ''); 
+    setEditPhone(o.phone || '');
+    setEditItems(o.items || ''); 
+    setEditPriceString(o.price || ''); // Сюда падает строка вида "700 RUB + 70 BYN"
+    setEditComment(o.comment || ''); 
+    setEditStatus(o.status || 'new');
   };
 
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingOrder) return;
+    
+    // Сохраняем измененные менеджером строки напрямую в текстовые поля базы данных
     await supabase.from('orders').update({
-      type: editType, courier_id: editCourier || null, address: editAddress,
-      delivery_time: editTime, phone: editPhone, items: editItems,
-      price: parseFloat(editPrice), currency: editCurrency, usd_rate: parseFloat(editUsdRate),
-      comment: editComment, status: editStatus
+      type: editType, 
+      courier_id: editCourier || null, 
+      address: editAddress,
+      delivery_time: editTime, 
+      phone: editPhone, 
+      items: editItems,
+      price: editPriceString, // Отправляем обновленный вручную мультивалютный текст
+      comment: editComment, 
+      status: editStatus
     }).eq('id', editingOrder.id);
+    
     setEditingOrder(null);
     fetchAllOrders();
   };
@@ -113,7 +125,7 @@ export default function ManagerJournal() {
         </div>
       </div>
 
-      {/* Список отфильтрованных заказов */}
+      {/* Список заказов */}
       <div className="space-y-3">
         {allOrders.length === 0 ? (
           <p className="text-gray-400 text-center py-8 bg-white rounded-3xl border border-dashed">Заказов не найдено</p>
@@ -132,7 +144,6 @@ export default function ManagerJournal() {
                     {o.status === 'new' ? 'Новый' : o.status === 'in_transit' ? 'В пути' : o.status === 'delivered' ? 'Доставлен' : 'Отказ'}
                   </span>
                   <button type="button" onClick={() => startEdit(o)} className="text-indigo-600 font-bold bg-indigo-50 px-2 py-0.5 rounded cursor-pointer">Правка ✏️</button>
-                  {/* Красная кнопка полного удаления заказа */}
                   <button type="button" onClick={() => handleDeleteOrder(o.id)} className="text-red-500 font-bold bg-red-50 px-2 py-0.5 rounded cursor-pointer">🗑️</button>
                 </div>
               </div>
@@ -141,7 +152,7 @@ export default function ManagerJournal() {
               {o.comment && <p className="text-xs text-amber-700 font-mono bg-amber-50/50 p-2 rounded-lg">💡 {o.comment}</p>}
               <div className="flex justify-between items-center text-xs pt-2 border-t border-gray-50">
                 <span className="text-gray-400">Курьер: <strong className="text-gray-700">{couriers.find(c => c.username === o.courier_id)?.full_name || o.courier_id || 'Не назначен'}</strong></span>
-                <span className="font-black text-gray-800 text-sm">{o.price} {o.currency}</span>
+                <span className="font-black text-gray-800 text-sm">{o.price}</span>
               </div>
             </div>
           ))
@@ -185,18 +196,27 @@ export default function ManagerJournal() {
                 <input type="text" value={editAddress} onChange={(e) => setEditAddress(e.target.value)} required className="w-full p-2.5 bg-gray-50 rounded-xl text-sm border-0 text-gray-800" />
               </div>
               <div className="grid grid-cols-2 gap-2">
-                <input type="text" value={editTime} onChange={(e) => setEditTime(e.target.value)} placeholder="Время" className="w-full p-2.5 bg-gray-50 rounded-xl text-sm border-0 text-gray-800" />
-                <input type="tel" value={editPhone} onChange={(e) => setEditPhone(e.target.value)} required placeholder="Телефон" className="w-full p-2.5 bg-gray-50 rounded-xl text-sm border-0 text-gray-800" />
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 mb-1">Время</label>
+                  <input type="text" value={editTime} onChange={(e) => setEditTime(e.target.value)} placeholder="Время" className="w-full p-2.5 bg-gray-50 rounded-xl text-sm border-0 text-gray-800" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 mb-1">Телефон</label>
+                  <input type="tel" value={editPhone} onChange={(e) => setEditPhone(e.target.value)} required placeholder="Телефон" className="w-full p-2.5 bg-gray-50 rounded-xl text-sm border-0 text-gray-800" />
+                </div>
               </div>
-              <input type="text" value={editItems} onChange={(e) => setEditItems(e.target.value)} required placeholder="Товары" className="w-full p-2.5 bg-gray-50 rounded-xl text-sm border-0 text-gray-800" />
-              <div className="grid grid-cols-3 gap-2">
-                <input type="number" step="0.01" value={editPrice} onChange={(e) => setEditPrice(e.target.value)} required placeholder="Цена" className="w-full p-2.5 bg-gray-50 rounded-xl text-sm border-0 text-gray-800" />
-                <select value={editCurrency} onChange={(e) => setEditCurrency(e.target.value)} className="w-full p-2.5 bg-gray-50 rounded-xl text-sm border-0 text-gray-800">
-                  <option value="BYN">BYN</option><option value="USD">USD</option><option value="RUB">RUB</option>
-                </select>
-                <input type="number" step="0.0001" value={editUsdRate} onChange={(e) => setEditUsdRate(e.target.value)} placeholder="Курс" className="w-gray p-2.5 bg-gray-50 rounded-xl text-sm border-0 text-gray-800" />
+              <div>
+                <label className="block text-xs font-bold text-gray-500 mb-1">Товары в заказе</label>
+                <input type="text" value={editItems} onChange={(e) => setEditItems(e.target.value)} required className="w-full p-2.5 bg-gray-50 rounded-xl text-sm border-0 text-gray-800" />
               </div>
-              <input type="text" value={editComment} onChange={(e) => setEditComment(e.target.value)} placeholder="Комментарий" className="w-full p-2.5 bg-gray-50 rounded-xl text-sm border-0 text-gray-800" />
+              <div>
+                <label className="block text-xs font-bold text-gray-500 mb-1">Сумма к оплате (Мультивалютная строка)</label>
+                <input type="text" value={editPriceString} onChange={(e) => setEditPriceString(e.target.value)} required placeholder="Например: 700 RUB + 70 BYN" className="w-full p-2.5 bg-gray-50 rounded-xl text-sm border-0 text-gray-800 font-mono" />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-500 mb-1">Комментарий</label>
+                <input type="text" value={editComment} onChange={(e) => setEditComment(e.target.value)} placeholder="Комментарий" className="w-full p-2.5 bg-gray-50 rounded-xl text-sm border-0 text-gray-800" />
+              </div>
               <button type="submit" className="w-full bg-indigo-600 text-white p-3.5 rounded-xl font-bold active:scale-95 transition-all cursor-pointer">Сохранить</button>
             </form>
           </div>
