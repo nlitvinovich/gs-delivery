@@ -37,15 +37,26 @@ export default function CourierDashboard({ username }: CourierDashboardProps) {
     if (cData) setCouriers(cData);
   };
 
-  useEffect(() => {
+    useEffect(() => {
     fetchData();
+
+    // Настраиваем живое прослушивание всей таблицы заказов
     const channel = supabase
-      .channel('realtime-orders')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
-        fetchData();
-      })
+      .channel('courier-live-updates')
+      .on(
+        'postgres_changes', 
+        { event: '*', schema: 'public', table: 'orders' }, 
+        () => {
+          // Как только менеджер добавил, изменил или удалил любой заказ —
+          // курьерский экран на iPhone мгновенно перезапросит актуальные данные!
+          fetchData(); 
+        }
+      )
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [username]);
 
   const handleStatusButtonClick = async (order: any) => {
