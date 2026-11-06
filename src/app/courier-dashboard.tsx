@@ -10,7 +10,7 @@ export default function CourierDashboard({ username }: { username: string }) {
   
   const [returnAddress, setReturnAddress] = useState('');
   const [returnTime, setReturnTime] = useState('');
-  const [returnDate, setReturnDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [returnDate, setReturnDate] = useState(() => new Date().toISOString().split('T'));
   const [returnCourier, setReturnCourier] = useState(username);
   const [returnComment, setReturnComment] = useState('');
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -19,6 +19,7 @@ export default function CourierDashboard({ username }: { username: string }) {
 
   const fetchData = async () => {
     if (!cleanUsername) return;
+    // Загружаем абсолютно все заказы курьера (теперь они не скрываются, а сортируются в реальном времени)
     const { data: oData } = await supabase.from('orders').select('*').eq('courier_id', cleanUsername).order('created_at', { ascending: false });
     if (oData) setOrders(oData);
     const { data: cData } = await supabase.from('app_users').select('username, full_name').eq('role', 'courier').order('id', { ascending: true });
@@ -27,22 +28,26 @@ export default function CourierDashboard({ username }: { username: string }) {
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(() => { fetchData(); }, 3000); // Поллинг каждые 3 секунды для iOS Safari
+    const interval = setInterval(() => { fetchData(); }, 3000); // Поллинг для стабильности Safari iOS
     return () => clearInterval(interval);
   }, [cleanUsername]);
 
-  const handleStatusButtonClick = async (order: any) => {
-    if (order.status === 'new') {
-      await supabase.from('orders').update({ status: 'in_transit' }).eq('id', order.id);
+  // Обработчик ручной смены статуса курьером через выпадающий список
+  const handleStatusChange = async (order: any, newStatus: string) => {
+    if (newStatus === 'delivered' && order.type === 'minibus_send') {
+      // Если курьер выбрал выполнен для маршрутки — открываем шторку обратки
+      setActiveOrderForModal(order);
+      setReturnAddress(order.address || '');
+      setReturnTime(order.delivery_time || '');
+      setReturnDate(new Date().toISOString().split('T'));
+      setReturnCourier(cleanUsername);
+      setReturnComment('');
+      setIsFormOpen(false);
+      setShowMinibusModal(true);
+    } else {
+      // Для всех остальных статусов и типов заказов обновляем мгновенно
+      await supabase.from('orders').update({ status: newStatus }).eq('id', order.id);
       fetchData();
-    } else if (order.status === 'in_transit') {
-      if (order.type === 'minibus_send') {
-        setActiveOrderForModal(order); setReturnAddress(order.address || ''); setReturnTime(order.delivery_time || '');
-        setReturnDate(new Date().toISOString().split('T')[0]); setReturnCourier(cleanUsername); setReturnComment('');
-        setIsFormOpen(false); setShowMinibusModal(true);
-      } else {
-        await finishOrderDelivery(order.id);
-      }
     }
   };
 
@@ -68,9 +73,9 @@ export default function CourierDashboard({ username }: { username: string }) {
     alert('Обратный заказ создан!');
   };
 
+  // Активные — это те, что менеджер или курьер держит в работе
   const activeOrders = orders.filter(o => o.status === 'new' || o.status === 'in_transit');
   const inactiveOrders = orders.filter(o => o.status === 'delivered' || o.status === 'canceled');
-
   return (
     <div className="max-w-md mx-auto space-y-6 text-slate-900">
       <div className="space-y-4">
@@ -87,10 +92,30 @@ export default function CourierDashboard({ username }: { username: string }) {
                 <span className="font-bold px-2.5 py-1 bg-slate-100 rounded-full">{getTypeName(order.type)}</span>
                 <span className="font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">{order.delivery_time || 'Время не указано'}</span>
               </div>
-              <div className="flex items-start justify-between gap-2"><p className="text-sm font-semibold">{order.address}</p><a href={`yandexmaps://maps.yandex.ru/?text=${encodeURIComponent(order.address)}`} className="bg-amber-100 text-amber-800 text-xs font-bold px-3 py-1.5 rounded-xl shrink-0">Карта 🗺️</a></div>
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-sm font-semibold">{order.address}</p>
+                <a href={`yandexmaps://maps.yandex.ru/?text=${encodeURIComponent(order.address)}`} className="bg-amber-100 text-amber-800 text-xs font-bold px-3 py-1.5 rounded-xl shrink-0">Карта 🗺️</a>
+              </div>
               <p className="text-xs text-gray-500">Клиент: <a href={`tel:${order.phone}`} className="text-indigo-600 font-bold underline">{order.phone}</a></p>
-              <div className="text-sm bg-slate-50/50 p-3 rounded-xl border border-dashed"><span className="font-medium">Товары:</span> {order.items}{order.comment && <p className="text-xs text-amber-700 mt-1 font-mono">💡 {order.comment}</p>}</div>
-              <div className="flex justify-between items-center pt-2"><p className="text-base font-black break-all">{order.price}</p><button type="button" onClick={() => handleStatusButtonClick(order)} className="px-4 py-2.5 bg-blue-600 text-white rounded-xl text-xs font-bold shadow-sm">{order.status === 'new' ? 'В путь 🚀' : 'Доставлен ✅'}</button></div>
+              <div className="text-sm bg-slate-50/50 p-3 rounded-xl border border-dashed">
+                <span className="font-medium">Товары:</span> {order.items}
+                {order.comment && <p className="text-xs text-amber-700 mt-1 font-mono">💡 {order.comment}</p>}
+              </div>
+              <div className="flex justify-between items-center pt-2 gap-2">
+                <p className="text-base font-black break-all flex-1">{order.price}</p>
+                
+                {/* ВЫПАДАЮЩИЙ СПИСОК ВЫБОРА СТАТУСА ДЛЯ КУРЬЕРА */}
+                <select 
+                  value={order.status} 
+                  onChange={(e) => handleStatusChange(order, e.target.value)}
+                  className="p-2 bg-slate-100 font-bold text-xs rounded-xl border-0 text-slate-800 focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="new">🆕 Новый</option>
+                  <option value="in_transit">🚀 В пути</option>
+                  <option value="delivered">✅ Выполнено</option>
+                  <option value="canceled">🛑 Отказ</option>
+                </select>
+              </div>
             </div>
           ))
         )}
@@ -101,8 +126,25 @@ export default function CourierDashboard({ username }: { username: string }) {
         <div className="space-y-2">
           {inactiveOrders.map((order) => (
             <div key={order.id} className="bg-gray-50/70 border border-gray-100 rounded-2xl p-3 flex justify-between items-center opacity-70">
-              <div className="space-y-0.5 max-w-[65%]"><p className="text-xs font-bold truncate">{order.address}</p><p className="text-[10px] text-gray-400 truncate">🛍️ {order.items}</p></div>
-              <div className="text-right max-w-[35%]"><span className={`inline-block text-[10px] font-black px-2 py-1 rounded-lg ${order.status === 'delivered' ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>{order.status === 'delivered' ? 'Выполнено ✓' : 'ОТКАЗ 🛑'}</span><p className="text-xs font-black text-gray-600 mt-0.5 break-all">{order.price}</p></div>
+              <div className="space-y-0.5 max-w-[50%]">
+                <p className="text-xs font-bold truncate">{order.address}</p>
+                <p className="text-[10px] text-gray-400 truncate">🛍️ {order.items}</p>
+              </div>
+              <div className="flex items-center gap-2 max-w-[50%] justify-end">
+                <p className="text-xs font-black text-gray-600 break-all">{order.price}</p>
+                
+                {/* ТАКЖЕ ДАЕМ ВОЗМОЖНОСТЬ ВЕРНУТЬ ИЗ АРХИВА */}
+                <select 
+                  value={order.status} 
+                  onChange={(e) => handleStatusChange(order, e.target.value)}
+                  className="p-1.5 bg-white font-bold text-[10px] rounded-lg border text-slate-800"
+                >
+                  <option value="new">🆕 Новый</option>
+                  <option value="in_transit">🚀 В пути</option>
+                  <option value="delivered">✅ Выполнено</option>
+                  <option value="canceled">🛑 Отказ</option>
+                </select>
+              </div>
             </div>
           ))}
         </div>
@@ -142,6 +184,6 @@ export default function CourierDashboard({ username }: { username: string }) {
 }
 
 function getTypeName(t: string) {
-  const names: Record<string, string> = { city_delivery: '🏙 *Город*', minibus_send: '🚌 *Маршрутка*', courier_service: '📦 *Служба*', pickup: '🏪 *Самовывоз*', minibus_pickup: '📥 *Забор*', errand: '🏃 *Поручение*' };
+  const names: Record<string, string> = { city_delivery: '🏙️ Город', minibus_send: '🚌 Маршрутка', courier_service: '📦 Служба', pickup: '🏪 Самовывоз', minibus_pickup: '📥 Забор', errand: '🏃 Поручение' };
   return names[t] || t;
 }
