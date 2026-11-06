@@ -8,6 +8,7 @@ export default function ManagerCreateModal({ couriers, onClose, onCreated }: { c
   const [type, setType] = useState('city_delivery');
   const [address, setAddress] = useState('');
   const [time, setTime] = useState('');
+  const [orderDate, setOrderDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [phone, setPhone] = useState('');
   const [itemsList, setItemsList] = useState<OrderItem[]>([{ name: '', price: '', currency: 'BYN' }]);
   const [comment, setComment] = useState('');
@@ -31,9 +32,18 @@ export default function ManagerCreateModal({ couriers, onClose, onCreated }: { c
     if (!finalItemsText) { alert('Добавьте товар'); setLoading(false); return; }
 
     const { error } = await supabase.from('orders').insert([{
-      type, address, delivery_time: time, phone, items: finalItemsText,
-      price: totalPriceString, currency: 'MULTI', comment, status: 'new', courier_id: selectedCourier || null
-    }]);
+  type, 
+  address, 
+  delivery_time: time, 
+  phone, 
+  items: finalItemsText,
+  price: totalPriceString, 
+  currency: 'MULTI', 
+  comment, 
+  status: 'new', 
+  courier_id: selectedCourier || null,
+  order_date: orderDate // <-- Добавлено сохранение даты
+}]);
     
     setLoading(false);
     if (error) alert('Ошибка: ' + error.message);
