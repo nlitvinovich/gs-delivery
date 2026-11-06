@@ -12,10 +12,38 @@ export default function ManagerEditModal({ order, couriers, onClose, onUpdated }
   const [editTime, setEditTime] = useState(order.delivery_time || '');
   const [editPhone, setEditPhone] = useState(order.phone || '');
   const [editComment, setEditComment] = useState(order.comment || '');
-  const [editItemsList, setEditItemsList] = useState<EditOrderItem[]>([{ name: '', price: '', currency: 'BYN' }]);
+  
+  // Изначально пустой массив, который заполнится при старте
+  const [editItemsList, setEditItemsList] = useState<EditOrderItem[]>([]);
   const [computedPriceString, setComputedPriceString] = useState('0.00 BYN');
 
+  // Разбираем строку товаров из базы данных при открытии шторки
   useEffect(() => {
+    try {
+      if (order.items && order.items.includes('(')) {
+        // Разделяем строку вида "Товар 1 (100 USD), Товар 2 (50 RUB)"
+        const parts = order.items.split(', ');
+        const parsed = parts.map((p: string) => {
+          // Регулярное выражение вытаскивает отдельно Название, Цену и Валюту
+          const match = p.match(/(.+)\s\(([\d.]+)\s(BYN|USD|RUB)\)/);
+          if (match) {
+            return { name: match[1].trim(), price: match[2], currency: match[3] };
+          }
+          return { name: p.trim(), price: '', currency: 'BYN' };
+        });
+        setEditItemsList(parsed);
+      } else {
+        // Если это старый формат или обычный текст
+        setEditItemsList([{ name: order.items || '', price: '', currency: 'BYN' }]);
+      }
+    } catch (e) {
+      setEditItemsList([{ name: order.items || '', price: '', currency: 'BYN' }]);
+    }
+  }, [order]);
+
+  // На лету пересчитываем мультивалютный итог
+  useEffect(() => {
+    if (editItemsList.length === 0) return;
     const totals: Record<string, number> = {};
     editItemsList.forEach((item) => {
       const itemPrice = parseFloat(item.price);
@@ -48,7 +76,7 @@ export default function ManagerEditModal({ order, couriers, onClose, onUpdated }
         </div>
         <form onSubmit={handleUpdate} className="space-y-3">
           <select value={editStatus} onChange={(e) => setEditStatus(e.target.value)} className="w-full p-2.5 bg-slate-50 rounded-xl border-0 font-bold"><option value="new">Новый</option><option value="in_transit">В пути</option><option value="delivered">Доставлен</option><option value="canceled">Отказ 🛑</option></select>
-          <select value={editType} onChange={(e) => setEditType(e.target.value)} className="w-full p-2.5 bg-slate-50 rounded-xl border-0 font-bold"><option value="city_delivery">🏙️ По городу</option><option value="minibus_send">🚌 Отправка маршруткой</option><option value="courier_service">📦 Курьерская сл.</option><option value="pickup">🏪 Самовывоз</option><option value="minibus_pickup">📥 Забор маршрутки</option><option value="errand">Поручение</option></select>
+          <select value={editType} onChange={(e) => setEditType(e.target.value)} className="w-full p-2.5 bg-slate-50 rounded-xl border-0 font-bold"><option value="city_delivery">🏙️ По городу</option><option value="minibus_send">🚌 Отправка маршруткой</option><option value="courier_service">📦 Курьерская сл.</option><option value="pickup">🏪 Самовывоз</option><option value="minibus_pickup">Забор маршрутки</option><option value="errand">Поручение</option></select>
           <select value={editCourier} onChange={(e) => setEditCourier(e.target.value)} className="w-full p-2.5 bg-slate-50 rounded-xl border-0 font-bold"><option value="">-- Общий пул --</option>{couriers.map((c) => <option key={c.username} value={c.username}>👤 {c.full_name}</option>)}</select>
           <input type="text" value={editAddress} onChange={(e) => setEditAddress(e.target.value)} required placeholder="Адрес" className="w-full p-2.5 bg-slate-50 rounded-xl border-0 font-bold" />
           <div className="grid grid-cols-2 gap-2">
