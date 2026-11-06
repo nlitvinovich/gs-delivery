@@ -15,7 +15,6 @@ export default function CourierDashboard({ username }: { username: string }) {
   const [isFormOpen, setIsFormOpen] = useState(false);
 
   const cleanUsername = username.trim().toLowerCase();
-
   const fetchData = async () => {
     if (!cleanUsername) return;
     const { data: o } = await supabase.from('orders').select('*').eq('courier_id', cleanUsername).order('created_at', { ascending: false });
@@ -33,14 +32,13 @@ export default function CourierDashboard({ username }: { username: string }) {
   const handleStatusChange = async (order: any, newStatus: string) => {
     if (newStatus === 'delivered' && order.type === 'minibus_send') {
       setActiveOrderForModal(order); setReturnAddress(order.address || ''); setReturnTime(order.delivery_time || '');
-      setReturnDate(new Date().toISOString().split('T')[0]); setReturnCourier(cleanUsername); setReturnComment('');
+      setReturnDate(new Date().toISOString().split('T')); setReturnCourier(cleanUsername); setReturnComment('');
       setIsFormOpen(false); setShowMinibusModal(true);
     } else {
       await supabase.from('orders').update({ status: newStatus }).eq('id', order.id);
       fetchData();
     }
   };
-
   const handleCreateReturnOrder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeOrderForModal) return;
@@ -61,7 +59,6 @@ export default function CourierDashboard({ username }: { username: string }) {
     return names[t] || t;
   };
 
-  // Настройка 5 упорядоченных блоков по вашему списку
   const active = orders.filter(o => o.status === 'new' || o.status === 'in_transit');
   const inactive = orders.filter(o => o.status === 'delivered' || o.status === 'canceled');
 
@@ -71,10 +68,8 @@ export default function CourierDashboard({ username }: { username: string }) {
     { title: '🏃 Поручения', items: active.filter(o => o.type === 'errand'), color: 'text-indigo-600' },
     { title: '📦 Курьерская доставка', items: active.filter(o => o.type === 'courier_service'), color: 'text-purple-600' }
   ];
-
   return (
-    <div className="max-w-md mx-auto space-y-4 text-slate-900 px-1 pb-10">
-      {/* Рендерим первые 4 активные группы по порядку */}
+    <div className="max-w-md mx-auto space-y-3 text-slate-900 px-1 pb-10">
       {groups.map((g, idx) => g.items.length > 0 && (
         <div key={idx} className="space-y-1.5">
           <h2 className={`text-xs font-black uppercase tracking-wider px-1 ${g.color}`}>{g.title} ({g.items.length})</h2>
@@ -94,7 +89,7 @@ export default function CourierDashboard({ username }: { username: string }) {
               </div>
               <div className="text-[11px] bg-slate-50/60 p-1.5 rounded-lg text-gray-700 leading-tight">
                 <span className="font-medium text-gray-400">Товары:</span> {order.items}
-                {order.comment && <p className="text-make text-amber-700 mt-0.5 font-mono">💡 {order.comment}</p>}
+                {order.comment && <p className="text-xs text-amber-700 mt-0.5 font-mono">💡 {order.comment}</p>}
               </div>
               <div className="flex justify-between items-center pt-0.5 gap-2 border-t border-gray-50">
                 <p className="text-xs font-black text-gray-900 flex-1 truncate">{order.price}</p>
@@ -110,7 +105,6 @@ export default function CourierDashboard({ username }: { username: string }) {
       {active.length === 0 && (
         <p className="text-gray-400 text-center py-6 bg-white rounded-2xl border border-dashed text-xs">Нет активных задач</p>
       )}
-
       {/* 5. БЛОК: ЗАВЕРШЕННЫЕ И ОТКАЗЫ */}
       <div className="space-y-1 pt-2 border-t border-gray-100">
         <h2 className="text-[11px] font-black text-gray-400 uppercase tracking-wider px-1 flex justify-between items-center">
@@ -135,27 +129,26 @@ export default function CourierDashboard({ username }: { username: string }) {
         </div>
       </div>
 
-      {/* ШТОРКА МАРШРУТКИ */}
+      {/* ШТОРКА ЗАВЕРШЕНИЯ МАРШРУТКИ */}
       {showMinibusModal && activeOrderForModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-end justify-center p-4 backdrop-blur-xs">
-          <div className="bg-white w-full max-w-sm rounded-t-3xl p-4 space-y-3 max-h-[80vh] overflow-y-auto text-xs">
+          <div className="bg-white w-full max-w-sm rounded-t-2xl p-4 space-y-3 max-h-[80vh] overflow-y-auto text-xs">
             <h3 className="font-bold text-center text-gray-800">Маршрутка №{activeOrderForModal.id}</h3>
             {!isFormOpen ? (
               <div className="space-y-1"><button type="button" onClick={() => setIsFormOpen(true)} className="w-full bg-indigo-600 text-white py-2 rounded-xl font-bold text-xs">🔄 С обраткой</button><button type="button" onClick={() => handleStatusChange(activeOrderForModal, 'delivered')} className="w-full bg-gray-50 text-gray-700 py-2 rounded-xl font-bold text-xs">➡️ Без обратки</button><button type="button" onClick={() => { setShowMinibusModal(false); setActiveOrderForModal(null); }} className="w-full text-gray-400 py-1 text-center">Отмена</button></div>
             ) : (
               <form onSubmit={handleCreateReturnOrder} className="space-y-2">
                 <input type="text" value={returnAddress} onChange={(e) => setReturnAddress(e.target.value)} required placeholder="Адрес забора" className="w-full p-2 bg-gray-50 rounded-lg border-0" />
-Используйте код с осторожностью.
-<input type="date" value={returnDate} onChange={(e) => setReturnDate(e.target.value)} required className="w-full p-2 bg-gray-50 rounded-lg border-0" /><input type="text" value={returnTime} onChange={(e) => setReturnTime(e.target.value)} placeholder="До 14:00" className="w-full p-2 bg-gray-50 rounded-lg border-0" />
-<select value={returnCourier} onChange={(e) => setReturnCourier(e.target.value)} className="w-full p-2 bg-gray-50 rounded-lg border-0">{couriers.map((c) => {c.username === cleanUsername ? 👤 Я : 👤 ${c.full_name}})}
-<textarea value={returnComment} onChange={(e) => setReturnComment(e.target.value)} placeholder="Комментарий..." rows={2} className="w-full p-2 bg-gray-50 rounded-lg border-0" />
-💾 Создать обратку
-<button type="button" onClick={() => setIsFormOpen(false)} className="w-full text-gray-400 py-1 text-center">Назад
-
-)}
-
-
-)}
-
-);
+                <div className="grid grid-cols-2 gap-2"><input type="date" value={returnDate} onChange={(e) => setReturnDate(e.target.value)} required className="w-full p-2 bg-gray-50 rounded-lg border-0" /><input type="text" value={returnTime} onChange={(e) => setReturnTime(e.target.value)} placeholder="До 14:00" className="w-full p-2 bg-gray-50 rounded-lg border-0" /></div>
+                <select value={returnCourier} onChange={(e) => setReturnCourier(e.target.value)} className="w-full p-2 bg-gray-50 rounded-lg border-0">{couriers.map((c) => <option key={c.username} value={c.username}>{c.username === cleanUsername ? `👤 Я` : `👤 ${c.full_name}`}</option>)}</select>
+                <textarea value={returnComment} onChange={(e) => setReturnComment(e.target.value)} placeholder="Комментарий..." rows={2} className="w-full p-2 bg-gray-50 rounded-lg border-0" />
+                <button type="submit" className="w-full bg-indigo-600 text-white py-2 rounded-lg font-bold">💾 Создать обратку</button>
+                <button type="button" onClick={() => setIsFormOpen(false)} className="w-full text-gray-400 py-1 text-center">Назад</button>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
