@@ -1,12 +1,12 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
-import ManagerEditModal from './manager-edit-modal'; // Импортируем нашу новую шторку
+import ManagerEditModal from './manager-edit-modal';
 
 export default function ManagerJournal() {
   const [allOrders, setAllOrders] = useState<any[]>([]);
   const [couriers, setCouriers] = useState<any[]>([]);
-  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T'));
+  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [selectedCourierFilter, setSelectedCourierFilter] = useState('all');
   const [editingOrder, setEditingOrder] = useState<any | null>(null);
 
@@ -33,9 +33,17 @@ export default function ManagerJournal() {
     }
   };
 
+  const getTypeName = (t: string) => {
+    const names: Record<string, string> = { 
+      city_delivery: '🏙️ Город', minibus_send: '🚌 Маршрутка', 
+      courier_service: '📦 Служба', pickup: '🏪 Самовывоз', 
+      minibus_pickup: '📥 Забор', errand: '🏃 Поручение' 
+    };
+    return names[t] || t;
+  };
+
   return (
     <div className="space-y-4">
-      {/* Фильтры */}
       <div className="bg-white rounded-3xl p-4 shadow-sm border border-slate-100 space-y-3 text-sm text-slate-800">
         <div className="flex justify-between items-center">
           <span className="font-bold text-slate-700">Дата просмотра:</span>
@@ -50,7 +58,6 @@ export default function ManagerJournal() {
         </div>
       </div>
 
-      {/* Список заказов */}
       <div className="space-y-3">
         {allOrders.length === 0 ? (
           <p className="text-slate-400 text-center py-8 bg-white rounded-3xl border border-dashed border-slate-200 text-sm">Заказов нет</p>
@@ -58,7 +65,7 @@ export default function ManagerJournal() {
           allOrders.map((o) => (
             <div key={o.id} className="bg-white rounded-3xl p-4 shadow-sm border border-slate-100 space-y-2 text-sm text-slate-900">
               <div className="flex justify-between items-center text-xs">
-                <span className="font-black px-2.5 py-1 bg-slate-100 text-slate-700 rounded-full">{o.type === 'city_delivery' ? '🏙️ Город' : '🚌 Маршрутка'}</span>
+                <span className="font-black px-2.5 py-1 bg-slate-100 text-slate-700 rounded-full">{getTypeName(o.type)}</span>
                 <div className="flex items-center gap-1.5">
                   <span className={`px-2 py-0.5 rounded font-black ${o.status === 'canceled' ? 'bg-red-50 text-red-600' : o.status === 'delivered' ? 'bg-emerald-50 text-emerald-600' : o.status === 'in_transit' ? 'bg-amber-50 text-amber-600' : 'bg-blue-50 text-blue-600'}`}>
                     {o.status === 'new' ? 'Новый' : o.status === 'in_transit' ? 'В пути' : o.status === 'delivered' ? 'Доставлен' : 'Отказ 🛑'}
@@ -79,7 +86,6 @@ export default function ManagerJournal() {
         )}
       </div>
 
-      {/* Рендерим модальное окно из отдельного файла */}
       {editingOrder && (
         <ManagerEditModal 
           order={editingOrder} 
