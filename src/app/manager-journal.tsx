@@ -2,6 +2,12 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
 
+interface EditOrderItem {
+  name: string;
+  price: string;
+  currency: string;
+}
+
 export default function ManagerJournal() {
   const [allOrders, setAllOrders] = useState<any[]>([]);
   const [couriers, setCouriers] = useState<any[]>([]);
@@ -9,16 +15,18 @@ export default function ManagerJournal() {
   const [selectedCourierFilter, setSelectedCourierFilter] = useState('all');
   const [editingOrder, setEditingOrder] = useState<any | null>(null);
   
-  // Простые и надежные текстовые состояния
-  const [editType, setEditType] = useState('');
+  // Базовые поля заказа
+  const [editType, setEditType] = useState('city_delivery');
   const [editCourier, setEditCourier] = useState('');
   const [editAddress, setEditAddress] = useState('');
   const [editTime, setEditTime] = useState('');
   const [editPhone, setEditPhone] = useState('');
-  const [editItems, setEditItems] = useState(''); // Прямой текст товаров
-  const [editPriceString, setEditPriceString] = useState(''); // Прямой текст цены
   const [editComment, setEditComment] = useState('');
   const [editStatus, setEditStatus] = useState('new');
+
+  // Динамический список товаров в модалке (точно такой же, как при создании)
+  const [editItemsList, setEditItemsList] = useState<EditOrderItem[]>([{ name: '', price: '', currency: 'BYN' }]);
+  const [computedPriceString, setComputedPriceString] = useState('0.00 BYN');
 
   const fetchData = async () => {
     const { data: cData } = await supabase.from('app_users').select('username, full_name').eq('role', 'courier');
@@ -37,6 +45,19 @@ export default function ManagerJournal() {
 
   useEffect(() => { fetchData(); }, [selectedDate, selectedCourierFilter]);
 
+  // На лету группируем и суммируем одинаковые валюты в окне правки
+  useEffect(() => {
+    const totals: Record<string, number> = {};
+    editItemsList.forEach((item) => {
+      const itemPrice = parseFloat(item.price);
+      if (!isNaN(itemPrice) && itemPrice > 0) {
+        totals[item.currency] = (totals[item.currency] || 0) + itemPrice;
+      }
+    });
+    const parts = Object.entries(totals).map(([curr, sum]) => `${sum.toFixed(2)} ${curr}`);
+    setComputedPriceString(parts.length > 0 ? parts.join(' + ') : '0.00 BYN');
+  }, [editItemsList]);
+
   const handleDeleteOrder = async (id: number) => {
     if (window.confirm(`Вы уверены, что хотите ПОЛНОСТЬЮ УДАЛИТЬ заказ №${id}?`)) {
       await supabase.from('orders').delete().eq('id', id);
@@ -44,28 +65,59 @@ export default function ManagerJournal() {
     }
   };
 
-  // Без всяких регулярных выражений просто берем строки из базы "как есть"
+  // При открытии правки даем менеджеру чистую удобную таблицу для быстрого переввода
   const startEdit = (o: any) => {
     setEditingOrder(o); 
-    setEditType(o.type); 
+    setEditType(o.type || 'city_delivery'); 
     setEditCourier(o.courier_id || '');
     setEditAddress(o.address || ''); 
     setEditTime(o.delivery_time || ''); 
     setEditPhone(o.phone || '');
-    setEditItems(o.items || ''); 
-    setEditPriceString(o.price || ''); 
     setEditComment(o.comment || ''); 
     setEditStatus(o.status || 'new');
+    setEditItemsList([{ name: '', price: '', currency: 'BYN' }]); // Сбрасываем в чистую таблицу, чтобы старый склеенный текст ничего не ломал
+  };
+
+  const handleAddEditItemField = () => {
+    setEditItemsList([...editItemsList, { name: '', price: '', currency: 'BYN' }]);
+  };
+
+  const handleEditItemChange = (index: number, field: keyof EditOrderItem, value: string) => {
+    const updated = [...editItemsList];
+    updated[index][field] = value;
+    setEditItemsList(updated);
+  };
+
+  const handleRemoveEditItemField = (index: number) => {
+    if (editItemsList.length > 1) {
+      setEditItemsList(editItemsList.filter((_, i) => i !== index));
+    }
   };
 
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingOrder) return;
-    
+
+    const finalItemsText = editItemsList
+      .filter(item => item.name.trim().length > 0)
+      .map(item => `${item.name.trim()} (${item.price || 0} ${item.currency})`)
+      .join(', ');
+
+    if (!finalItemsText) {
+      alert('Добавьте хотя бы один товар');
+      return;
+    }
+
     await supabase.from('orders').update({
-      type: editType, courier_id: editCourier || null, address: editAddress,
-      delivery_time: editTime, phone: editPhone, items: editItems,
-      price: editPriceString, comment: editComment, status: editStatus
+      type: editType, 
+      courier_id: editCourier || null, 
+      address: editAddress,
+      delivery_time: editTime, 
+      phone: editPhone, 
+      items: finalItemsText,
+      price: computedPriceString, 
+      comment: editComment, 
+      status: editStatus
     }).eq('id', editingOrder.id);
     
     setEditingOrder(null);
@@ -124,16 +176,32 @@ export default function ManagerJournal() {
                 <input type="text" value={editTime} onChange={(e) => setEditTime(e.target.value)} placeholder="Время" className="w-full p-2 bg-gray-50 rounded-xl border-0" />
                 <input type="tel" value={editPhone} onChange={(e) => setEditPhone(e.target.value)} required placeholder="Телефон" className="w-full p-2 bg-gray-50 rounded-xl border-0" />
               </div>
-              <div>
-                <label className="block font-bold text-gray-400 mb-1">Товары</label>
-                <input type="text" value={editItems} onChange={(e) => setEditItems(e.target.value)} required className="w-full p-2.5 bg-gray-50 rounded-xl border-0 text-gray-800" />
+
+              {/* ТАБЛИЦА ТОВАРОВ В ОКНЕ ПРАВКИ */}
+              <div className="space-y-1.5 border-t pt-2">
+                <label className="font-bold text-gray-500">Товары и цены закупа</label>
+                {editItemsList.map((item, index) => (
+                  <div key={index} className="flex gap-1 items-center">
+                    <input type="text" value={item.name} onChange={(e) => handleEditItemChange(index, 'name', e.target.value)} required placeholder="Товар" className="flex-1 p-2 bg-gray-50 rounded-xl border-0 text-xs text-gray-800" />
+                    <input type="number" step="0.01" value={item.price} onChange={(e) => handleEditItemChange(index, 'price', e.target.value)} required placeholder="Цена" className="w-14 p-2 bg-gray-50 rounded-xl border-0 text-xs text-center text-gray-800" />
+                    <select value={item.currency} onChange={(e) => handleEditItemChange(index, 'currency', e.target.value)} className="w-14 p-2 bg-gray-50 rounded-xl border-0 font-bold text-[10px]">
+                      <option value="BYN">BYN</option><option value="USD">USD</option><option value="RUB">RUB</option>
+                    </select>
+                    {editItemsList.length > 1 && (
+                      <button type="button" onClick={() => handleRemoveEditItemField(index)} className="p-2 text-red-500 bg-red-50 rounded-xl text-xs font-bold">✕</button>
+                    )}
+                  </div>
+                ))}
+                <button type="button" onClick={handleAddEditItemField} className="text-indigo-600 bg-indigo-50 px-2 py-1 rounded-lg font-bold text-[10px]">+ Добавить товар</button>
               </div>
-              <div>
-                <label className="block font-bold text-gray-400 mb-1">Сумма к оплате</label>
-                <input type="text" value={editPriceString} onChange={(e) => setEditPriceString(e.target.value)} required className="w-full p-2.5 bg-gray-50 rounded-xl border-0 text-gray-800 font-mono" />
+
+              {/* МУЛЬТИВАЛЮТНЫЙ АВТОРАСЧЕТ ИТОГА */}
+              <div className="bg-slate-50 p-2.5 rounded-xl text-center font-mono font-bold border border-slate-200 text-slate-800">
+                Итог: {computedPriceString}
               </div>
+
               <input type="text" value={editComment} onChange={(e) => setEditComment(e.target.value)} placeholder="Комментарий" className="w-full p-2 bg-gray-50 rounded-xl border-0" />
-              <button type="submit" className="w-full bg-indigo-600 text-white p-2.5 rounded-xl font-bold cursor-pointer">Сохранить</button>
+              <button type="submit" className="w-full bg-indigo-600 text-white p-2.5 rounded-xl font-bold cursor-pointer">Сохранить заказ</button>
             </form>
           </div>
         </div>
