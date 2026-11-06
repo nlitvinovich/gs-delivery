@@ -10,7 +10,7 @@ export default function CourierDashboard({ username }: { username: string }) {
   
   const [returnAddress, setReturnAddress] = useState('');
   const [returnTime, setReturnTime] = useState('');
-  const [returnDate, setReturnDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [returnDate, setReturnDate] = useState(() => new Date().toISOString().split('T'));
   const [returnCourier, setReturnCourier] = useState(username);
   const [returnComment, setReturnComment] = useState('');
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -26,9 +26,18 @@ export default function CourierDashboard({ username }: { username: string }) {
   };
 
   useEffect(() => {
+    // 1. Первая мгновенная загрузка при открытии приложения
     fetchData();
-    const channel = supabase.channel('public:orders').on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => { fetchData(); }).subscribe();
-    return () => { supabase.removeChannel(channel); };
+
+    // 2. Железобетонный фоновый таймер: каждые 3 секунды проверяем базу данных.
+    // Это гарантирует прилет заказов на iOS Safari, даже если соединение "уснуло".
+    const interval = setInterval(() => {
+      fetchData();
+    }, 3000); 
+
+    return () => {
+      clearInterval(interval); // Чистим память при закрытии вкладки
+    };
   }, [cleanUsername]);
 
   const handleStatusButtonClick = async (order: any) => {
@@ -38,7 +47,7 @@ export default function CourierDashboard({ username }: { username: string }) {
     } else if (order.status === 'in_transit') {
       if (order.type === 'minibus_send') {
         setActiveOrderForModal(order); setReturnAddress(order.address || ''); setReturnTime(order.delivery_time || '');
-        setReturnDate(new Date().toISOString().split('T')[0]); setReturnCourier(cleanUsername); setReturnComment('');
+        setReturnDate(new Date().toISOString().split('T')); setReturnCourier(cleanUsername); setReturnComment('');
         setIsFormOpen(false); setShowMinibusModal(true);
       } else {
         await finishOrderDelivery(order.id);
@@ -78,7 +87,7 @@ export default function CourierDashboard({ username }: { username: string }) {
           <span className="text-xs bg-indigo-50 text-indigo-600 font-bold px-2 py-1 rounded-full">{activeOrders.length}</span>
         </h2>
         {activeOrders.length === 0 ? (
-          <p className="text-gray-400 text-center py-8 bg-white rounded-3xl border border-dashed text-sm">Нет активных задач</p>
+          <p className="text-gray-400 text-center py-8 bg-white rounded-3xl border border-dashed text-sm">Нет active_orders активных задач</p>
         ) : (
           activeOrders.map((order) => (
             <div key={order.id} className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100 space-y-3">
