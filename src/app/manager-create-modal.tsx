@@ -8,12 +8,14 @@ export default function ManagerCreateModal({ couriers, onClose, onCreated }: { c
   const [type, setType] = useState('city_delivery');
   const [address, setAddress] = useState('');
   const [time, setTime] = useState('');
-  const [orderDate, setOrderDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [phone, setPhone] = useState('');
   const [itemsList, setItemsList] = useState<OrderItem[]>([{ name: '', price: '', currency: 'BYN' }]);
   const [comment, setComment] = useState('');
   const [selectedCourier, setSelectedCourier] = useState('');
   const [loading, setLoading] = useState(false);
+  
+  // Состояние для даты выполнения заказа (по умолчанию сегодня)
+  const [orderDate, setOrderDate] = useState(() => new Date().toISOString().split('T')[0]);
 
   const finalPriceString = itemsList.reduce((acc, item) => {
     const p = parseFloat(item.price);
@@ -32,24 +34,15 @@ export default function ManagerCreateModal({ couriers, onClose, onCreated }: { c
     if (!finalItemsText) { alert('Добавьте товар'); setLoading(false); return; }
 
     const { error } = await supabase.from('orders').insert([{
-  type, 
-  address, 
-  delivery_time: time, 
-  phone, 
-  items: finalItemsText,
-  price: totalPriceString, 
-  currency: 'MULTI', 
-  comment, 
-  status: 'new', 
-  courier_id: selectedCourier || null,
-  order_date: orderDate // <-- Добавлено сохранение даты
-}]);
+      type, address, delivery_time: time, phone, items: finalItemsText,
+      price: totalPriceString, currency: 'MULTI', comment, status: 'new', 
+      courier_id: selectedCourier || null, order_date: orderDate
+    }]);
     
     setLoading(false);
     if (error) alert('Ошибка: ' + error.message);
     else { alert('Заказ создан!'); onCreated(); }
   };
-
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-end justify-center p-4 backdrop-blur-xs">
       <div className="bg-white w-full max-w-sm rounded-t-3xl p-5 space-y-4 shadow-xl max-h-[85vh] overflow-y-auto text-sm text-slate-900">
@@ -65,11 +58,19 @@ export default function ManagerCreateModal({ couriers, onClose, onCreated }: { c
             <option value="">-- Общий пул (Не назначен) --</option>
             {couriers.map((c) => <option key={c.username} value={c.username}>👤 {c.full_name}</option>)}
           </select>
+
+          {/* ПОЛЕ ВЫБОРА ДАТЫ ВЫПОЛНЕНИЯ ЗАКАЗА */}
+          <div>
+            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">📅 Дата выполнения</label>
+            <input type="date" value={orderDate} onChange={(e) => setOrderDate(e.target.value)} required className="w-full p-2.5 bg-slate-50 rounded-xl border-0 font-bold text-slate-900" />
+          </div>
+
           <input type="text" value={address} onChange={(e) => setAddress(e.target.value)} required placeholder="Адрес доставки" className="w-full p-2.5 bg-slate-50 rounded-xl border-0 font-bold" />
           <div className="grid grid-cols-2 gap-2">
             <input type="text" value={time} onChange={(e) => setTime(e.target.value)} placeholder="Время (до 18:00)" className="w-full p-2.5 bg-slate-50 rounded-xl border-0 font-bold" />
             <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} required placeholder="Телефон" className="w-full p-2.5 bg-slate-50 rounded-xl border-0 font-bold" />
           </div>
+          
           <div className="space-y-1.5 border-t pt-2">
             <label className="text-xs font-bold text-slate-400 uppercase">Товары</label>
             {itemsList.map((item, index) => (
