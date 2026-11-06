@@ -14,53 +14,34 @@ export default function ManagerOrders({ couriers, onCreated }: { couriers: any[]
   const [time, setTime] = useState('');
   const [phone, setPhone] = useState('');
   
-  // У каждого товара теперь своя валюта (по умолчанию BYN)
+  // Массив товаров: у каждого свое название, цена и валюта
   const [itemsList, setItemsList] = useState<OrderItem[]>([{ name: '', price: '', currency: 'BYN' }]);
   
-  const [finalCurrency, setFinalCurrency] = useState('BYN'); // Валюта итога заказа
-  const [totalPrice, setTotalPrice] = useState(0);
-  const [usdRate, setUsdRate] = useState('3.30'); // Курс $ к BYN
-  const [rubRate, setRubRate] = useState('3.45'); // Курс 100 RUB к BYN
+  // Строка с итоговым перечислением сумм (например: "150.00 USD + 20.00 BYN")
+  const [totalPriceString, setTotalPriceString] = useState('0.00 BYN');
   const [comment, setComment] = useState('');
   const [selectedCourier, setSelectedCourier] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Функция перевода любой суммы в BYN (базовую валюту для расчетов)
-  const convertToByn = (amount: number, fromCurrency: string) => {
-    const usd = parseFloat(usdRate) || 3.3;
-    const rub = (parseFloat(rubRate) || 3.45) / 100; // курс за 1 рубль
-
-    if (fromCurrency === 'BYN') return amount;
-    if (fromCurrency === 'USD') return amount * usd;
-    if (fromCurrency === 'RUB') return amount * rub;
-    return amount;
-  };
-
-  // Функция перевода из BYN в целевую валюту итога
-  const convertFromByn = (amountInByn: number, toCurrency: string) => {
-    const usd = parseFloat(usdRate) || 3.3;
-    const rub = (parseFloat(rubRate) || 3.45) / 100;
-
-    if (toCurrency === 'BYN') return amountInByn;
-    if (toCurrency === 'USD') return amountInByn / usd;
-    if (toCurrency === 'RUB') return amountInByn / rub;
-    return amountInByn;
-  };
-
-  // Динамический пересчет общего итога
+  // Считаем итог: группируем одинаковые валюты и складываем их суммы
   useEffect(() => {
-    let totalInByn = 0;
+    const totals: Record<string, number> = {};
 
     itemsList.forEach((item) => {
       const itemPrice = parseFloat(item.price);
-      if (!isNaN(itemPrice)) {
-        totalInByn += convertToByn(itemPrice, item.currency);
+      if (!isNaN(itemPrice) && itemPrice > 0) {
+        totals[item.currency] = (totals[item.currency] || 0) + itemPrice;
       }
     });
 
-    const finalSum = convertFromByn(totalInByn, finalCurrency);
-    setTotalPrice(isNaN(finalSum) ? 0 : finalSum);
-  }, [itemsList, finalCurrency, usdRate, rubRate]);
+    // Собираем массив строк вида "100.00 USD"
+    const parts = Object.entries(totals).map(
+      ([curr, sum]) => `${sum.toFixed(2)} ${curr}`
+    );
+
+    // Соединяем их через плюс, либо пишем 0.00 BYN, если всё пусто
+    setTotalPriceString(parts.length > 0 ? parts.join(' + ') : '0.00 BYN');
+  }, [itemsList]);
 
   const handleAddItemField = () => {
     setItemsList([...itemsList, { name: '', price: '', currency: 'BYN' }]);
@@ -82,27 +63,31 @@ export default function ManagerOrders({ couriers, onCreated }: { couriers: any[]
     e.preventDefault();
     setLoading(true);
 
-    // Текст для курьера: "Товар 1 (100 USD), Товар 2 (50 RUB)"
+    // Текст для карточки курьера: "Товар 1 (100 USD), Товар 2 (50 RUB)"
     const finalItemsText = itemsList
       .filter(item => item.name.trim().length > 0)
       .map(item => `${item.name.trim()} (${item.price || 0} ${item.currency})`)
       .join(', ');
 
     if (!finalItemsText) {
-      alert('Добавьте товар');
+      alert('Добавьте хотя бы один товар');
       setLoading(false);
       return;
     }
 
+    // Сохраняем итоговую строку валют в текстовое поле цены.
+    // Примечание: Убедитесь, что в Supabase тип колонки price изменен на TEXT, если ранее стоял NUMERIC.
     const { error } = await supabase.from('orders').insert([{
       type, address, delivery_time: time, phone, items: finalItemsText,
-      price: parseFloat(totalPrice.toFixed(2)), currency: finalCurrency, 
-      usd_rate: parseFloat(usdRate), comment, status: 'new', courier_id: selectedCourier || null
+      price: totalPriceString, // Записываем строку "150 USD + 50 RUB"
+      currency: 'MULTI', // Сигнальное значение мультивалютности
+      comment, status: 'new', courier_id: selectedCourier || null
     }]);
     
     setLoading(false);
-    if (error) alert('Ошибка: ' + error.message);
-    else {
+    if (error) {
+      alert('Ошибка: ' + error.message + '. Если ошибка в типе price, измените его в Supabase на TEXT.');
+    } else {
       alert('Заказ создан!');
       setAddress(''); setTime(''); setPhone(''); setItemsList([{ name: '', price: '', currency: 'BYN' }]); setComment(''); setSelectedCourier('');
       onCreated();
@@ -146,7 +131,7 @@ export default function ManagerOrders({ couriers, onCreated }: { couriers: any[]
 
         {/* СПИСОК ТОВАРОВ С СОБСТВЕННЫМИ ВАЛЮТАМИ */}
         <div className="space-y-2">
-          <label className="block text-xs font-bold text-gray-500 mb-1">Наименование товаров, цены и валюта закупа</label>
+          <label className="block text-xs font-bold text-gray-500 mb-1">Наименование товаров, цены и валюта</label>
           {itemsList.map((item, index) => (
             <div key={index} className="flex gap-1.5 items-center">
               <input
@@ -195,35 +180,12 @@ export default function ManagerOrders({ couriers, onCreated }: { couriers: any[]
           </button>
         </div>
 
-        {/* БЛОК КУРСОВ И ИТОГОВОГО РАСЧЕТА */}
-        <div className="bg-slate-50 p-4 rounded-2xl border border-dashed border-slate-200 space-y-3">
-          <div className="grid grid-cols-2 gap-2.5">
-            <div>
-              <label className="block text-[10px] font-bold text-gray-400 uppercase mb-0.5">Курс $ (к BYN)</label>
-              <input type="number" step="0.01" value={usdRate} onChange={(e) => setUsdRate(e.target.value)} className="w-full p-2 bg-white rounded-xl text-xs border border-gray-100 text-gray-800 font-semibold" />
-            </div>
-            <div>
-              <label className="block text-[10px] font-bold text-gray-400 uppercase mb-0.5">Курс 100 RUB (к BYN)</label>
-              <input type="number" step="0.01" value={rubRate} onChange={(e) => setRubRate(e.target.value)} className="w-full p-2 bg-white rounded-xl text-xs border border-gray-100 text-gray-800 font-semibold" />
-            </div>
-          </div>
-          
-          <div className="flex items-center justify-between border-t border-slate-200/60 pt-2.5">
-            <div className="flex flex-col">
-              <span className="text-xs font-bold text-slate-500">Валюта расчета (Итог):</span>
-              <select value={finalCurrency} onChange={(e) => setFinalCurrency(e.target.value)} className="mt-1 p-1.5 bg-white rounded-lg text-xs font-bold border border-gray-100 text-gray-800 shadow-xs">
-                <option value="BYN">BYN</option>
-                <option value="USD">USD</option>
-                <option value="RUB">RUB</option>
-              </select>
-            </div>
-            <div className="text-right">
-              <span className="text-[10px] font-bold text-slate-400 block uppercase">Итого к оплате</span>
-              <span className="text-lg font-black text-slate-900 bg-white px-3 py-1 rounded-xl shadow-xs border border-slate-100 inline-block mt-0.5">
-                {totalPrice.toFixed(2)} {finalCurrency}
-              </span>
-            </div>
-          </div>
+        {/* ПЛАШКА ИТОГОВОГО РАЗДЕЛЬНОГО РАСЧЕТА */}
+        <div className="bg-slate-50 p-4 rounded-2xl border border-dashed border-slate-200 flex flex-col gap-1">
+          <span className="text-xs font-bold text-slate-500">Итоговая сумма к оплате:</span>
+          <span className="text-base font-black text-slate-900 bg-white px-3 py-2.5 rounded-xl shadow-xs border border-slate-100 block mt-1 text-center font-mono break-all">
+            {totalPriceString}
+          </span>
         </div>
 
         <div>
